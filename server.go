@@ -45,10 +45,12 @@ func ParseArgs(parser *kingpin.Application, args []string) {
 	OutDirBase = *outDirBase
 }
 
-func RunServer(port int) (err error) {
+func RunServer(port int, useLogger bool) (err error) {
 	server := echo.New()
 
-	server.Use(middleware.Logger())
+	if useLogger {
+		server.Use(middleware.Logger())
+	}
 	//server.Use(middleware.Gzip())
 
 	// Set up the routes
@@ -57,7 +59,7 @@ func RunServer(port int) (err error) {
 
 	go PendingWorkHandler()
 	// Start the server
-	server.Run(fasthttp.New(fmt.Sprintf(":%d", Port)))
+	server.Run(fasthttp.New(fmt.Sprintf(":%d", port)))
 	return
 }
 
@@ -65,5 +67,5 @@ func Main(args []string) {
 	parser := setup_parser()
 	ParseArgs(parser, args)
 
-	RunServer(Port)
+	RunServer(Port, true)
 }
