@@ -14,7 +14,7 @@ To run the HTTP server, run `go build` inside the `server` directory and run thi
       --out=OUT              Directory in which to store processed files
 
 # Webserver Configuration
-The server is based on echo. If you would like to deploy the server behind `Nginx`, add the following to your `site.conf` file.
+The server is based on [echo](https://github.com/labstack/echo). If you would like to deploy the server behind `NGINX`, add the following to your `site.conf` file.
 
     location /phonelab {
         rewrite /phonelab(.*) $1 break;
@@ -32,4 +32,4 @@ The full upload URL would thus resolve into:
 
     http://example.com/phonelab/uploader/:version/:deviceid/:packagename/:filename
 
-The above `Nginx` configuration strips out the `/phonelab` and sends the remainder as the resource request.
+The above `NGINX` configuration strips out the `/phonelab` and sends the remainder as the resource request.
