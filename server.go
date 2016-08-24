@@ -30,7 +30,7 @@ var (
 
 func setup_parser() *kingpin.Application {
 	app = kingpin.New("phonelab-backend-server", "")
-	port = app.Flag("port", "Port to run webserver on").Default("80").Int()
+	port = app.Flag("port", "Port to run webserver on").Default("8081").Int()
 	stagingDirBase = app.Flag("stage-dir", "Directory in which to stage files for processing").Required().String()
 	outDirBase = app.Flag("out", "Directory in which to store processed files").Required().String()
 	return app
