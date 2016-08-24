@@ -17,7 +17,7 @@ func HandleUpload(input io.Reader, work *Work, stagingDir string, workChannel ch
 
 	gocommons.Makedirs(stagingDir)
 	if file, err = ioutil.TempFile(stagingDir, "log-"); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to create temporary file")
+		fmt.Fprintln(os.Stderr, "Failed to create temporary file", err)
 		return
 	}
 	defer file.Close()
