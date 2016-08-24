@@ -22,6 +22,10 @@ const (
 	PENDING int = iota
 )
 
+var (
+	server *Server
+)
+
 func DataGenerator(channel chan string, stop chan interface{}) {
 	var shouldStop bool = false
 
@@ -86,7 +90,7 @@ func LoadDevicesFromFile(filePath string) []string {
 // Generates data and and sends it to the server via POST requests
 // Each request is of random length between MIN_REQ_SIZE and MAX_REQ_SIZE
 // Continues until it receives data on the quitChannel
-func DeviceDataGenerator(deviceId string, commChannel chan interface{}, quitChannel chan interface{}, waitGroup *sync.WaitGroup) {
+func DeviceDataGenerator(deviceId string, port int, commChannel chan interface{}, quitChannel chan interface{}, waitGroup *sync.WaitGroup) {
 	defer waitGroup.Done()
 
 	var (
@@ -113,7 +117,7 @@ func DeviceDataGenerator(deviceId string, commChannel chan interface{}, quitChan
 	// Start the data generator
 	go DataGenerator(logChannel, dataQuitChannel)
 
-	baseUrl := "http://dirtydeeds.cse.buffalo.edu:8000/phonelab/uploader"
+	baseUrl := fmt.Sprintf("http://dirtydeeds.cse.buffalo.edu:%d/uploader", port)
 	version := "2.0.1"
 	packageName := "edu.buffalo.cse.phonelab.conductor.tasks.LogcatTask"
 	fileName := "log.out"
@@ -160,6 +164,10 @@ func DeviceDataGenerator(deviceId string, commChannel chan interface{}, quitChan
 				End()
 			commChannel <- DONE
 
+			if resp.StatusCode != 200 {
+				panic("Error while doing POST")
+			}
+
 			_ = resp
 			_ = body
 			_ = err
@@ -181,14 +189,30 @@ func DeviceDataGenerator(deviceId string, commChannel chan interface{}, quitChan
 	wg.Wait()
 }
 
+func cleanup() {
+	// We need to clean up
+	fmt.Println("Cleaning up")
+	directoriesToDelete := []string{StagingDirBase, OutDirBase}
+	for _, dir := range directoriesToDelete {
+		cmdline := fmt.Sprintf("rm -rf %v", dir)
+		if args, err := shlex.Split(cmdline); err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to split:", cmdline)
+		} else {
+			if ret, stdout, stderr := gocommons.Execv(args[0], args[1:], true); ret != 0 {
+				fmt.Fprintln(os.Stderr, stdout)
+				fmt.Fprintln(os.Stderr, stderr)
+			}
+		}
+	}
+	return
+}
+
 func TestUpload(t *testing.T) {
 	device := "dummy-TestUpload"
 
 	result := gocommons.InitResult("TestUpload")
 
-	serverStopChannel := make(chan interface{})
-	serverCallbackChannel := make(chan interface{})
-	go RunTestServerAsync(serverStopChannel, serverCallbackChannel)
+	go RunTestServerAsync(8083)
 
 	stopChannel := make(chan interface{})
 	commChannel := make(chan interface{})
@@ -205,21 +229,18 @@ func TestUpload(t *testing.T) {
 
 	wg := new(sync.WaitGroup)
 	wg.Add(1)
-	go DeviceDataGenerator(device, commChannel, stopChannel, wg)
+	go DeviceDataGenerator(device, 8083, commChannel, stopChannel, wg)
 	// We stop after 1 upload
 	stopChannel <- <-commChannel
 	wg.Wait()
 
-	// Close server
-	serverStopChannel <- struct{}{}
-	_ = <-serverCallbackChannel
-
-	time.Sleep(1 * time.Second)
+	server.Stop()
 
 	gocommons.HandleResult(t, true, result)
 }
 
-func RunTestServerAsync(stopChannel chan interface{}, callbackChannel chan interface{}) (err error) {
+func RunTestServerAsync(port int) {
+	var err error
 	if StagingDirBase, err = ioutil.TempDir("/tmp", "staging-"); err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to create staging dir")
 		os.Exit(-1)
@@ -234,34 +255,22 @@ func RunTestServerAsync(stopChannel chan interface{}, callbackChannel chan inter
 	// or a config file. Currently, this is hard-coded.
 	//fmt.Println("Starting server ...")
 
-	go RunServer(8081, true)
-
-	//fmt.Println("Waiting to clean up")
-	_ = <-stopChannel
-	// We need to clean up
-	fmt.Println("Cleaning up")
-	directoriesToDelete := []string{StagingDirBase, OutDirBase}
-	for _, dir := range directoriesToDelete {
-		cmdline := fmt.Sprintf("rm -rf %v", dir)
-		if args, err := shlex.Split(cmdline); err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to split:", cmdline)
-		} else {
-			if ret, stdout, stderr := gocommons.Execv(args[0], args[1:], true); ret != 0 {
-				fmt.Fprintln(os.Stderr, stdout)
-				fmt.Fprintln(os.Stderr, stderr)
-			}
-		}
+	// XXX: Should pending work handler be included here?
+	// If not, we would have to include it in every place that
+	// is looking to test an upload (currently, all tests in this file)
+	go PendingWorkHandler()
+	server, err = SetupServer(port, true)
+	if err != nil {
+		panic(err)
 	}
-	callbackChannel <- struct{}{}
-	return
+	RunServer(server)
 }
 
 func TestLoadCapability(t *testing.T) {
 	result := gocommons.InitResult("TestLoadCapability")
 
-	serverStopChannel := make(chan interface{})
-	serverCallbackChannel := make(chan interface{})
-	go RunTestServerAsync(serverStopChannel, serverCallbackChannel)
+	time.Sleep(3 * time.Second)
+	go RunTestServerAsync(8084)
 
 	devices := LoadDevicesFromFile("deviceids.txt")
 
@@ -307,10 +316,10 @@ func TestLoadCapability(t *testing.T) {
 		deviceChannel := make(chan interface{})
 		channels = append(channels, deviceChannel)
 		wg.Add(1)
-		go DeviceDataGenerator(device, commChannel, deviceChannel, wg)
+		go DeviceDataGenerator(device, 8084, commChannel, deviceChannel, wg)
 	}
 
-	time.Sleep(30 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	fmt.Println("Terminating ...")
 	for _, channel := range channels {
@@ -318,9 +327,9 @@ func TestLoadCapability(t *testing.T) {
 	}
 	wg.Wait()
 
-	serverStopChannel <- struct{}{}
-	_ = <-serverCallbackChannel
+	fmt.Println("Stopping server ...")
+	//TODO: Server stop logic
+	server.Stop()
 
-	time.Sleep(1 * time.Second)
 	gocommons.HandleResult(t, true, result)
 }

@@ -72,7 +72,7 @@ func TestPendingWorkHandler(t *testing.T) {
 		go deviceHandler(devices[idx], stopChannel)
 	}
 
-	time.Sleep(10 * time.Second)
+	time.Sleep(5 * time.Second)
 
 	for idx := 0; idx < 10; idx++ {
 		stopChannel <- struct{}{}
