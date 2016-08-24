@@ -1,7 +1,6 @@
 package phonelab_backend
 
 import (
-	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -47,7 +46,7 @@ func TestPendingWorkHandler(t *testing.T) {
 
 	wg := new(sync.WaitGroup)
 	deviceHandler := func(deviceId string, stopChannel chan interface{}) {
-		fmt.Println("deviceHandler:", deviceId)
+		//fmt.Println("deviceHandler:", deviceId)
 		defer wg.Done()
 		stop := false
 
@@ -73,7 +72,7 @@ func TestPendingWorkHandler(t *testing.T) {
 		go deviceHandler(devices[idx], stopChannel)
 	}
 
-	time.Sleep(10 * time.Minute)
+	time.Sleep(10 * time.Second)
 
 	for idx := 0; idx < 10; idx++ {
 		stopChannel <- struct{}{}

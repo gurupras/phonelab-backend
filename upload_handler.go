@@ -26,7 +26,7 @@ func HandleUpload(input io.Reader, work *Work, stagingDir string, workChannel ch
 		return
 	}
 
-	fmt.Println(fmt.Sprintf("Wrote %v bytes to :%v", bytesWritten, file.Name()))
+	//fmt.Println(fmt.Sprintf("Wrote %v bytes to :%v", bytesWritten, file.Name()))
 
 	work.FilePath = file.Name()
 	workChannel <- work
@@ -66,7 +66,6 @@ func HandleUploaderPost(c echo.Context) (err error) {
 
 	//fmt.Printf("Headers:\n%v\n", c.Request().Header())
 
-	fmt.Println("Responding with OK")
 	return c.String(http.StatusOK, "OK")
 }
 
