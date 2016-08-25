@@ -34,14 +34,6 @@ func (s *Server) Stop() {
 	s.snl.Stop()
 }
 
-type Work struct {
-	FilePath    string
-	Version     string
-	DeviceId    string
-	PackageName string
-	FileName    string
-}
-
 var (
 	Port           int
 	StagingDirBase string

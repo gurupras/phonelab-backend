@@ -5,6 +5,15 @@ import (
 	"os"
 )
 
+type Work struct {
+	Version         string
+	DeviceId        string
+	PackageName     string
+	LogFileName     string
+	UploadTimestamp int64
+	StagingFileName string
+}
+
 var (
 	PendingWorkChannel chan *Work
 	DeviceWorkChannel  map[string]chan *Work
