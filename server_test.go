@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gurupras/gocommons"
 	"github.com/labstack/echo"
 	"github.com/parnurzeal/gorequest"
 	"github.com/stretchr/testify/assert"
@@ -32,8 +31,6 @@ func TestServerConstructor(t *testing.T) {
 	var server *Server
 	var err error
 
-	result := gocommons.InitResult("TestServerConstructor")
-
 	server, err = New(-1)
 	assert.Nil(t, server, "Server was created with a negative port")
 	assert.NotNil(t, err, "No error on negative port")
@@ -45,36 +42,32 @@ func TestServerConstructor(t *testing.T) {
 	server, err = New(14111)
 	assert.NotNil(t, server, "Server was not created despite valid port")
 	assert.Nil(t, err, "Error on valid port")
-
-	gocommons.HandleResult(t, true, result)
 }
 
 func TestSetupServer(t *testing.T) {
 	var server *Server
 	var err error
 
-	result := gocommons.InitResult("TestSetupServer")
+	assert := assert.New(t)
 
 	server, err = SetupServer(-1, false)
-	assert.Nil(t, server, "Server was created with a negative port")
-	assert.NotNil(t, err, "No error on negative port")
+	assert.Nil(server, "Server was created with a negative port")
+	assert.NotNil(err, "No error on negative port")
 
 	server, err = SetupServer(14112, false)
-	assert.True(t, server != nil, "Server was not created despite valid port")
-	assert.True(t, err == nil, "Error on valid port")
-
-	gocommons.HandleResult(t, true, result)
+	assert.True(server != nil, "Server was not created despite valid port")
+	assert.True(err == nil, "Error on valid port")
 }
 
 func TestRunServer(t *testing.T) {
-	result := gocommons.InitResult("TestRunServer")
-
 	var err error
+
+	assert := assert.New(t)
 
 	go func() {
 		var server *Server
 		server, err = New(8082)
-		assert.Nil(t, err, "Failed to start server", err)
+		assert.Nil(err, "Failed to start server", err)
 		server.POST("/uploader/:version/:deviceId/:packageName/:fileName", testHttpMethod)
 		// Start the server
 		server.Run()
@@ -85,9 +78,7 @@ func TestRunServer(t *testing.T) {
 	buf.ReadFrom(resp.Body)
 	payload := buf.String()
 
-	assert.True(t, errors == nil, "POST request failed", errors)
-	assert.Equal(t, 200, resp.StatusCode, "POST request failed")
-	assert.Equal(t, "OK", payload, "POST request failed")
-
-	gocommons.HandleResult(t, true, result)
+	assert.True(errors == nil, "POST request failed", errors)
+	assert.Equal(200, resp.StatusCode, "POST request failed")
+	assert.Equal("OK", payload, "POST request failed")
 }

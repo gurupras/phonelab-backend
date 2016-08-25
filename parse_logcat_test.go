@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gurupras/gocommons"
 	"github.com/jehiah/go-strftime"
 	"github.com/stretchr/testify/assert"
 )
@@ -50,7 +49,7 @@ func GenerateRandomString(length int) string {
 }
 
 func TestCheckLogcatPattern(t *testing.T) {
-	result := gocommons.InitResult("TestCheckLogcatPattern")
+	assert := assert.New(t)
 
 	line := "6b793913-7cd9-477a-bbfa-62f07fbac87b 2016-04-21 09:59:01.199025638 11553177 [29981.752359]   202   203 D Kernel-Trace:      kworker/1:1-21588 [001] ...2 29981.751893: phonelab_periodic_ctx_switch_info: cpu=1 pid=7641 tgid=7613 nice=0 comm=Binder_1 utime=0 stime=0 rtime=158906 bg_utime=0 bg_stime=0 bg_rtime=0 s_run=0 s_int=2 s_unint=0 s_oth=0 log_idx=79981"
 
@@ -58,17 +57,15 @@ func TestCheckLogcatPattern(t *testing.T) {
 
 	payload := "kworker/1:1-21588 [001] ...2 29981.751893: phonelab_periodic_ctx_switch_info: cpu=1 pid=7641 tgid=7613 nice=0 comm=Binder_1 utime=0 stime=0 rtime=158906 bg_utime=0 bg_stime=0 bg_rtime=0 s_run=0 s_int=2 s_unint=0 s_oth=0 log_idx=79981"
 
-	assert.NotEqual(t, nil, logline, "Failed to parse logline")
-	assert.Equal(t, "6b793913-7cd9-477a-bbfa-62f07fbac87b", logline.BootId, "BootId was not parsed properly")
-	assert.Equal(t, "2016-04-21 09:59:01", strftime.Format("%Y-%m-%d %H:%M:%S", logline.Datetime), "Datetime was not parsed properly")
-	assert.Equal(t, int64(199025638), logline.DatetimeNanos, "DatetimeNanos was not parsed properly")
-	assert.Equal(t, int64(11553177), logline.LogcatToken, "LogcatToken was not parsed properly")
-	assert.Equal(t, 29981.752359, logline.TraceTime, "TraceTime was not parsed properly")
-	assert.Equal(t, int32(202), logline.Pid, "Pid was not parsed properly")
-	assert.Equal(t, int32(203), logline.Tid, "Tid was not parsed properly")
-	assert.Equal(t, "D", logline.Level, "Level was not parsed properly")
-	assert.Equal(t, "Kernel-Trace", logline.Tag, "Tag was not parsed properly")
-	assert.Equal(t, payload, logline.Payload, "Payload was not parsed properly")
-
-	gocommons.HandleResult(t, true, result)
+	assert.NotEqual(nil, logline, "Failed to parse logline")
+	assert.Equal("6b793913-7cd9-477a-bbfa-62f07fbac87b", logline.BootId, "BootId was not parsed properly")
+	assert.Equal("2016-04-21 09:59:01", strftime.Format("%Y-%m-%d %H:%M:%S", logline.Datetime), "Datetime was not parsed properly")
+	assert.Equal(int64(199025638), logline.DatetimeNanos, "DatetimeNanos was not parsed properly")
+	assert.Equal(int64(11553177), logline.LogcatToken, "LogcatToken was not parsed properly")
+	assert.Equal(29981.752359, logline.TraceTime, "TraceTime was not parsed properly")
+	assert.Equal(int32(202), logline.Pid, "Pid was not parsed properly")
+	assert.Equal(int32(203), logline.Tid, "Tid was not parsed properly")
+	assert.Equal("D", logline.Level, "Level was not parsed properly")
+	assert.Equal("Kernel-Trace", logline.Tag, "Tag was not parsed properly")
+	assert.Equal(payload, logline.Payload, "Payload was not parsed properly")
 }

@@ -42,8 +42,6 @@ func cleanup() {
 func TestUpload(t *testing.T) {
 	device := "dummy-TestUpload"
 
-	result := gocommons.InitResult("TestUpload")
-
 	go RunTestServerAsync(8083)
 
 	stopChannel := make(chan interface{})
@@ -67,8 +65,6 @@ func TestUpload(t *testing.T) {
 	wg.Wait()
 
 	server.Stop()
-
-	gocommons.HandleResult(t, true, result)
 }
 
 func RunTestServerAsync(port int) {
@@ -99,8 +95,6 @@ func RunTestServerAsync(port int) {
 }
 
 func TestLoadCapability(t *testing.T) {
-	result := gocommons.InitResult("TestLoadCapability")
-
 	time.Sleep(3 * time.Second)
 	go RunTestServerAsync(8084)
 
@@ -162,6 +156,4 @@ func TestLoadCapability(t *testing.T) {
 	fmt.Println("Stopping server ...")
 	//TODO: Server stop logic
 	server.Stop()
-
-	gocommons.HandleResult(t, true, result)
 }
