@@ -42,7 +42,6 @@ var (
 
 func addRoutes(server *Server) {
 	server.POST("/uploader/:version/:deviceId/:packageName/:fileName", HandleUploaderPost)
-	server.GET("/uploader/:version/:deviceId/:packageName/:fileName", HandleUploaderGet)
 }
 
 func SetupServer(port int, useLogger bool) (server *Server, err error) {
