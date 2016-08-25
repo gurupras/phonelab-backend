@@ -12,11 +12,6 @@ import (
 	"github.com/gurupras/gocommons"
 )
 
-const (
-	DONE    int = iota
-	PENDING int = iota
-)
-
 var (
 	server *Server
 )

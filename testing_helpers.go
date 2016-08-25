@@ -14,6 +14,11 @@ import (
 	"github.com/satori/go.uuid"
 )
 
+const (
+	DONE    int = iota
+	PENDING int = iota
+)
+
 func DataGenerator(channel chan string, stop chan interface{}) {
 	var shouldStop bool = false
 
