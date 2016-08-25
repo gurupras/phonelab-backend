@@ -1,7 +1,7 @@
 package phonelab_backend
 
 import (
-	"github.com/gurupras/stoppableNetListener"
+	"github.com/gurupras/go-stoppableNetListener"
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/engine"
 	"github.com/labstack/echo/engine/fasthttp"
