@@ -2,98 +2,30 @@ package phonelab_backend
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/google/shlex"
-	"github.com/gurupras/gocommons"
+	"github.com/stretchr/testify/assert"
 )
-
-var (
-	server *Server
-)
-
-func cleanup() {
-	// We need to clean up
-	fmt.Println("Cleaning up")
-	directoriesToDelete := []string{StagingDirBase, OutDirBase}
-	for _, dir := range directoriesToDelete {
-		cmdline := fmt.Sprintf("rm -rf %v", dir)
-		if args, err := shlex.Split(cmdline); err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to split:", cmdline)
-		} else {
-			if ret, stdout, stderr := gocommons.Execv(args[0], args[1:], true); ret != 0 {
-				fmt.Fprintln(os.Stderr, stdout)
-				fmt.Fprintln(os.Stderr, stderr)
-			}
-		}
-	}
-	return
-}
 
 func TestUpload(t *testing.T) {
-	device := "dummy-TestUpload"
+	var server *Server
+	assert := assert.New(t)
 
-	go RunTestServerAsync(8083)
+	go RunTestServerAsync(8083, &server)
 
-	stopChannel := make(chan interface{})
-	commChannel := make(chan interface{})
-	defer close(commChannel)
-
-	go func() {
-		// Dummy consumer for commChannel
-		for {
-			if _, ok := <-commChannel; !ok {
-				break
-			}
-		}
-	}()
-
-	wg := new(sync.WaitGroup)
-	wg.Add(1)
-	go DeviceDataGenerator(device, 8083, commChannel, stopChannel, wg)
-	// We stop after 1 upload
-	stopChannel <- <-commChannel
-	wg.Wait()
-
-	server.Stop()
-}
-
-func RunTestServerAsync(port int) {
-	var err error
-	if StagingDirBase, err = ioutil.TempDir("/tmp", "staging-"); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to create staging dir")
-		os.Exit(-1)
-	}
-
-	if OutDirBase, err = ioutil.TempDir("/tmp", "outdir-"); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to create outdir")
-		os.Exit(-1)
-	}
-
-	// FIXME: Port should probably be part of command line arguments
-	// or a config file. Currently, this is hard-coded.
-	//fmt.Println("Starting server ...")
-
-	// XXX: Should pending work handler be included here?
-	// If not, we would have to include it in every place that
-	// is looking to test an upload (currently, all tests in this file)
-	go PendingWorkHandler()
-	server, err = SetupServer(port, true)
-	if err != nil {
-		panic(err)
-	}
-	RunServer(server)
+	UploadFiles(8083, 1, 1, assert)
 }
 
 func TestLoadCapability(t *testing.T) {
-	time.Sleep(3 * time.Second)
-	go RunTestServerAsync(8084)
+	var server *Server
+	assert := assert.New(t)
 
-	devices := LoadDevicesFromFile("deviceids.txt")
+	go RunTestServerAsync(8084, &server)
+
+	devices := LoadDevicesFromFile("deviceids.txt", assert)
 
 	nDevices := 20
 

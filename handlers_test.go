@@ -2,6 +2,7 @@ package phonelab_backend
 
 import (
 	"fmt"
+	"math/rand"
 	"sync"
 	"testing"
 	"time"
@@ -77,7 +78,7 @@ func TestPendingWorkHandler(t *testing.T) {
 	}()
 	waitForPendingWorkChannel()
 
-	devices := LoadDevicesFromFile("./deviceids.txt")
+	devices := LoadDevicesFromFile("./deviceids.txt", assert)
 
 	wg := new(sync.WaitGroup)
 	startedMutex := sync.Mutex{}
@@ -136,4 +137,64 @@ func TestPendingWorkHandler(t *testing.T) {
 
 	//Now confirm that all posted work was completed
 	assert.Equal(started, verified, fmt.Sprintf("Started(%d) != Verified(%d)", started, verified))
+}
+
+func TestMakeStagedFilesPending(t *testing.T) {
+	var err error
+	assert := assert.New(t)
+
+	// First, finish the negative cases
+	err = MakeStagedFilesPending("/deadbeef")
+	assert.NotNil(err, "No error on non-existing stagingDir")
+
+	// We first generate some logs, close PendingWork* and then
+	// restart it to have it run MakeStagedFilesPending.
+	// By adding a custom workFn, we can count the number of pending tasks
+	// and ensure that it matches the number of files that was created
+	// from the generation step
+
+	// Unfortunately, to generate the logs, and have them moved to staging,
+	// we need to run the server. So go ahead and do that
+
+	// Run the test a few times to make sure it works every time
+	var (
+		numIterations int = 3
+		nDevices      int = 5
+		startPort     int = 9200
+	)
+	for i := 0; i < numIterations; i++ {
+		var nFilesPerDevice int = 3 + rand.Intn(3) // [3,5]
+		var server *Server
+		port := startPort + i
+		go RunTestServerAsync(port, &server)
+
+		UploadFiles(port, nDevices, nFilesPerDevice, assert)
+		totalFiles := nDevices * nFilesPerDevice
+
+		// Now close server
+		fmt.Println("Waiting for server to stop")
+		server.Stop()
+		fmt.Println("Server stopped")
+		// By now all the device handlers should have staged the files
+
+		PendingWorkChannel = make(chan *Work, 1000)
+
+		mutex := sync.Mutex{}
+		verified := 0
+		countFn := func(work *Work) {
+			mutex.Lock()
+			verified++
+			if verified == totalFiles {
+				close(PendingWorkChannel)
+			}
+			mutex.Unlock()
+		}
+		wg := new(sync.WaitGroup)
+		wg.Add(1)
+		go func() {
+			PendingWorkHandler(countFn)
+			wg.Done()
+		}()
+		wg.Wait()
+	}
 }

@@ -4,14 +4,17 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"io/ioutil"
 	"math/rand"
 	"os"
 	"sync"
 	"time"
 
+	"github.com/google/shlex"
 	"github.com/gurupras/gocommons"
 	"github.com/parnurzeal/gorequest"
 	"github.com/satori/go.uuid"
+	"github.com/stretchr/testify/assert"
 )
 
 const (
@@ -57,13 +60,14 @@ func DataGenerator(channel chan string, stop chan interface{}) {
 	}
 }
 
-func LoadDevicesFromFile(filePath string) []string {
+func LoadDevicesFromFile(filePath string, assert *assert.Assertions) []string {
 	devices := make([]string, 0)
 
 	fstruct, err := gocommons.Open(filePath, os.O_RDONLY, gocommons.GZ_UNKNOWN)
+	assert.Nil(err, "Failed to open file:", filePath, err)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to open file:", filePath)
-		os.Exit(-1)
+		return nil
 	}
 
 	channel := make(chan string)
@@ -77,6 +81,7 @@ func LoadDevicesFromFile(filePath string) []string {
 		}
 		devices = append(devices, device)
 	}
+	assert.True(len(devices) > 0, "Failed to load devices from file")
 	return devices
 }
 
@@ -178,6 +183,88 @@ func DeviceDataGenerator(deviceId string, port int, commChannel chan interface{}
 		//fmt.Println(resp)
 
 		//fmt.Println(fmt.Sprintf("%s: Sent file of size: %d bytes", deviceId, currentSize))
+	}
+	wg.Wait()
+}
+
+func cleanup() {
+	// We need to clean up
+	fmt.Println("Cleaning up")
+	directoriesToDelete := []string{StagingDirBase, OutDirBase}
+	for _, dir := range directoriesToDelete {
+		cmdline := fmt.Sprintf("rm -rf %v", dir)
+		if args, err := shlex.Split(cmdline); err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to split:", cmdline)
+		} else {
+			if ret, stdout, stderr := gocommons.Execv(args[0], args[1:], true); ret != 0 {
+				fmt.Fprintln(os.Stderr, stdout)
+				fmt.Fprintln(os.Stderr, stderr)
+			}
+		}
+	}
+	return
+}
+
+func RunTestServerAsync(port int, serverPtr **Server, workFuncs ...func(work *Work)) {
+	var err error
+	if StagingDirBase, err = ioutil.TempDir("/tmp", "staging-"); err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to create staging dir")
+		os.Exit(-1)
+	}
+
+	if OutDirBase, err = ioutil.TempDir("/tmp", "outdir-"); err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to create outdir")
+		os.Exit(-1)
+	}
+
+	// FIXME: Port should probably be part of command line arguments
+	// or a config file. Currently, this is hard-coded.
+	//fmt.Println("Starting server ...")
+
+	// XXX: Should pending work handler be included here?
+	// If not, we would have to include it in every place that
+	// is looking to test an upload (currently, all tests in this file)
+	go PendingWorkHandler(workFuncs...)
+	*serverPtr, err = SetupServer(port, true)
+	if err != nil {
+		panic(err)
+	}
+	RunServer(*serverPtr)
+}
+
+// Expects server to be started
+func UploadFiles(port int, nDevices, filesPerDevice int, assert *assert.Assertions) {
+	devices := LoadDevicesFromFile("deviceids.txt", assert)
+
+	wg := sync.WaitGroup{}
+	for i := 0; i < nDevices; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			stopChannel := make(chan interface{})
+			commChannel := make(chan interface{})
+			defer close(commChannel)
+
+			localWg := sync.WaitGroup{}
+			localWg.Add(1)
+			go func() {
+				defer localWg.Done()
+				// Dummy consumer for commChannel
+				for {
+					if _, ok := <-commChannel; !ok {
+						break
+					}
+				}
+			}()
+
+			go DeviceDataGenerator(devices[i], port, commChannel, stopChannel, &wg)
+			// We stop after filesPerDevice uploads
+			for filesUploaded := 0; filesUploaded < filesPerDevice; filesUploaded++ {
+				_ = <-commChannel
+			}
+			stopChannel <- struct{}{}
+			localWg.Wait()
+		}()
 	}
 	wg.Wait()
 }
