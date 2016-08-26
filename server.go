@@ -41,10 +41,9 @@ var (
 )
 
 func addRoutes(server *Server) {
-	server.POST("/uploader/:version/:deviceId/:packageName/:fileName", HandleUploaderPost)
 }
 
-func SetupServer(port int, useLogger bool) (server *Server, err error) {
+func SetupServer(port int, useLogger bool, workChannels ...chan *Work) (server *Server, err error) {
 	if server, err = New(port); err != nil {
 		return
 	}
@@ -53,8 +52,17 @@ func SetupServer(port int, useLogger bool) (server *Server, err error) {
 		server.Use(middleware.Logger())
 	}
 
+	var workChannel chan *Work
+	if workChannels == nil || len(workChannels) == 0 {
+		workChannel = make(chan *Work, 1000)
+	} else {
+		workChannel = workChannels[0]
+	}
 	// Set up the routes
-	addRoutes(server)
+	handleUploaderPost := func(c echo.Context) error {
+		return HandleUploaderPost(c, workChannel)
+	}
+	server.POST("/uploader/:version/:deviceId/:packageName/:fileName", handleUploaderPost)
 	return server, err
 }
 

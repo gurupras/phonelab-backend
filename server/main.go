@@ -35,8 +35,9 @@ func Main(args []string) (err error) {
 	parser := setup_parser()
 	ParseArgs(parser, args)
 
-	go phonelab_backend.PendingWorkHandler()
-	server, err := phonelab_backend.SetupServer(phonelab_backend.Port, true)
+	workChannel := make(chan *phonelab_backend.Work, 1000)
+	go phonelab_backend.PendingWorkHandler(workChannel)
+	server, err := phonelab_backend.SetupServer(phonelab_backend.Port, true, workChannel)
 	if err != nil {
 		return err
 	}

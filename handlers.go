@@ -22,11 +22,10 @@ type Work struct {
 }
 
 var (
-	PendingWorkChannel chan *Work
-	DeviceWorkChannel  map[string]chan *Work
+	DeviceWorkChannel map[string]chan *Work
 )
 
-func MakeStagedFilesPending(stagingDir string) error {
+func MakeStagedFilesPending(stagingDir string, pendingWorkChannel chan *Work) error {
 	var err error
 	files, err := gocommons.ListFiles(stagingDir, []string{"log-*"})
 	if err != nil {
@@ -64,7 +63,7 @@ func MakeStagedFilesPending(stagingDir string) error {
 			PackageName:     stagingMetadata.PackageName,
 			UploadTimestamp: stagingMetadata.UploadTimestamp,
 		}
-		PendingWorkChannel <- work
+		pendingWorkChannel <- work
 	}
 	for _, file := range files {
 		// Read the YAML metadata and create a work struct from it
@@ -73,9 +72,6 @@ func MakeStagedFilesPending(stagingDir string) error {
 	}
 	wg.Wait()
 	return err
-}
-
-func ProcessStagedWork(work *Work) {
 }
 
 func DeviceWorkHandler(deviceId string, workChannel chan *Work, workFn func(work *Work), statusChannel chan string) {
@@ -96,7 +92,7 @@ func DeviceWorkHandler(deviceId string, workChannel chan *Work, workFn func(work
 	}
 }
 
-func PendingWorkHandler(workFuncs ...func(work *Work)) {
+func PendingWorkHandler(workChannel chan *Work, workFuncs ...func(work *Work)) {
 	var work *Work
 	var ok bool
 	var deviceWorkChannel chan *Work
@@ -109,11 +105,10 @@ func PendingWorkHandler(workFuncs ...func(work *Work)) {
 		workFunc = ProcessStagedWork
 	}
 
-	PendingWorkChannel = make(chan *Work, 1000)
 	DeviceWorkChannel := make(map[string]chan *Work)
 
 	// Find all files in the staging area and re-assign them as pending work
-	go MakeStagedFilesPending(StagingDirBase)
+	MakeStagedFilesPending(StagingDirBase, workChannel)
 
 	wg := sync.WaitGroup{}
 	// Local function wrapping around DeviceWorkHandler to ensure that
@@ -127,8 +122,8 @@ func PendingWorkHandler(workFuncs ...func(work *Work)) {
 	delegated := 0
 	for {
 		//fmt.Println("Waiting for work")
-		if work, ok = <-PendingWorkChannel; !ok {
-			fmt.Fprintln(os.Stderr, "PendingWorkChannel closed?")
+		if work, ok = <-workChannel; !ok {
+			fmt.Fprintln(os.Stderr, "workChannel closed?")
 			break
 		}
 		//fmt.Println("Got new work")

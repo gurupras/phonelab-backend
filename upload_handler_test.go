@@ -11,19 +11,25 @@ import (
 )
 
 func TestUpload(t *testing.T) {
+	t.Parallel()
 	var server *Server
 	assert := assert.New(t)
 
-	go RunTestServerAsync(8083, &server)
+	workChannel := make(chan *Work, 1000)
+	go RunTestServerAsync(8083, workChannel, &server)
 
 	UploadFiles(8083, 1, 1, assert)
+	server.Stop()
+	cleanup()
 }
 
 func TestLoadCapability(t *testing.T) {
+	t.Parallel()
 	var server *Server
 	assert := assert.New(t)
 
-	go RunTestServerAsync(8084, &server)
+	workChannel := make(chan *Work, 1000)
+	go RunTestServerAsync(8084, workChannel, &server)
 
 	devices := LoadDevicesFromFile("deviceids.txt", assert)
 
@@ -41,7 +47,7 @@ func TestLoadCapability(t *testing.T) {
 		go func() {
 			for {
 				time.Sleep(1 * time.Second)
-				fmt.Println("Pending uploads:", pending)
+				fmt.Println("TLC: Pending uploads:", pending)
 			}
 		}()
 
@@ -83,4 +89,5 @@ func TestLoadCapability(t *testing.T) {
 	fmt.Println("Stopping server ...")
 	//TODO: Server stop logic
 	server.Stop()
+	cleanup()
 }

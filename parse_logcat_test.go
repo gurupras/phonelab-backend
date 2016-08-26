@@ -49,6 +49,7 @@ func GenerateRandomString(length int) string {
 }
 
 func TestCheckLogcatPattern(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	// Empty string

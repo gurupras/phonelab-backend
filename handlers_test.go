@@ -11,6 +11,7 @@ import (
 )
 
 func TestDeviceWorkHandler(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	statusChannel := make(chan string)
@@ -42,23 +43,20 @@ func TestDeviceWorkHandler(t *testing.T) {
 }
 
 func TestPendingWorkHandler(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
-	waitForPendingWorkChannel := func() {
-		for {
-			if PendingWorkChannel != nil {
-				break
-			}
-		}
-	}
-
-	PendingWorkChannel = nil
-	go PendingWorkHandler()
-	waitForPendingWorkChannel()
+	workChannel := make(chan *Work, 1000)
+	wg := new(sync.WaitGroup)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		PendingWorkHandler(workChannel)
+	}()
 	//PendingWorkChannel <- &Work{DeviceId: "dummy"}
-	close(PendingWorkChannel)
-
-	time.Sleep(3 * time.Second)
+	close(workChannel)
+	wg.Wait()
+	workChannel = nil
 
 	started := 0
 	verified := 0
@@ -69,18 +67,17 @@ func TestPendingWorkHandler(t *testing.T) {
 		mutex.Unlock()
 	}
 
-	PendingWorkChannel = nil
+	workChannel = make(chan *Work, 1000)
 	// We start PendingWorkHandler in a goroutine from which we can signal back that it has returned
 	pendingWorkHandlerDone := make(chan int)
 	go func() {
-		PendingWorkHandler(countFn)
+		PendingWorkHandler(workChannel, countFn)
 		close(pendingWorkHandlerDone)
 	}()
-	waitForPendingWorkChannel()
 
 	devices := LoadDevicesFromFile("./deviceids.txt", assert)
 
-	wg := new(sync.WaitGroup)
+	wg = new(sync.WaitGroup)
 	startedMutex := sync.Mutex{}
 	workProducer := func(deviceId string, stopChannel chan interface{}) {
 		//fmt.Println("workProducer:", deviceId)
@@ -89,17 +86,20 @@ func TestPendingWorkHandler(t *testing.T) {
 
 		go func() {
 			_ = <-stopChannel
+			startedMutex.Lock()
 			stop = true
+			startedMutex.Unlock()
 		}()
 
 		for {
+			startedMutex.Lock()
 			if stop {
+				startedMutex.Unlock()
 				break
 			}
 			work := new(Work)
 			work.DeviceId = deviceId
-			PendingWorkChannel <- work
-			startedMutex.Lock()
+			workChannel <- work
 			started++
 			startedMutex.Unlock()
 		}
@@ -123,13 +123,13 @@ func TestPendingWorkHandler(t *testing.T) {
 	// Wait for producers to terminate
 	wg.Wait()
 
-	// XXX: Remove this sleep
-	time.Sleep(1 * time.Millisecond)
-
 	// All producers have terminated. The number of tasks posted into
 	// PendingWorkChannel cannot change anymore.
 	// Close the PendingWorkChannel to trigger stopping of consumers
-	close(PendingWorkChannel)
+	mutex.Lock()
+	close(workChannel)
+	fmt.Println("Closed workChannel")
+	mutex.Unlock()
 
 	// Wait for PendingWorkHandler to return signalling that all consumers
 	// have finished consuming everything there is to consume
@@ -140,11 +140,12 @@ func TestPendingWorkHandler(t *testing.T) {
 }
 
 func TestMakeStagedFilesPending(t *testing.T) {
+	t.Parallel()
 	var err error
 	assert := assert.New(t)
 
 	// First, finish the negative cases
-	err = MakeStagedFilesPending("/deadbeef")
+	err = MakeStagedFilesPending("/deadbeef", nil)
 	assert.NotNil(err, "No error on non-existing stagingDir")
 
 	// We first generate some logs, close PendingWork* and then
@@ -166,7 +167,8 @@ func TestMakeStagedFilesPending(t *testing.T) {
 		var nFilesPerDevice int = 3 + rand.Intn(3) // [3,5]
 		var server *Server
 		port := startPort + i
-		go RunTestServerAsync(port, &server)
+		workChannel := make(chan *Work, 1000)
+		go RunTestServerAsync(port, workChannel, &server)
 
 		UploadFiles(port, nDevices, nFilesPerDevice, assert)
 		totalFiles := nDevices * nFilesPerDevice
@@ -175,26 +177,27 @@ func TestMakeStagedFilesPending(t *testing.T) {
 		fmt.Println("Waiting for server to stop")
 		server.Stop()
 		fmt.Println("Server stopped")
+
 		// By now all the device handlers should have staged the files
-
-		PendingWorkChannel = make(chan *Work, 1000)
-
+		workChannel = make(chan *Work, 1000)
 		mutex := sync.Mutex{}
 		verified := 0
 		countFn := func(work *Work) {
 			mutex.Lock()
 			verified++
 			if verified == totalFiles {
-				close(PendingWorkChannel)
+				close(workChannel)
 			}
+			assert.False(verified > totalFiles, "Verified more than total files?")
 			mutex.Unlock()
 		}
 		wg := new(sync.WaitGroup)
 		wg.Add(1)
 		go func() {
-			PendingWorkHandler(countFn)
-			wg.Done()
+			defer wg.Done()
+			PendingWorkHandler(workChannel, countFn)
 		}()
 		wg.Wait()
+		cleanup()
 	}
 }

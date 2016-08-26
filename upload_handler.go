@@ -45,7 +45,17 @@ func HandleUpload(input io.Reader, work *Work, stagingDir string, workChannel ch
 		return
 	}
 
+	err = os.Chmod(path, 0440)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, fmt.Sprintf("Failed to make staging "+
+			"file read-only:\n%s\n"+
+			"This is not a fatal error..continuing", err))
+	}
 	//fmt.Println(fmt.Sprintf("Wrote %v bytes to :%v", bytesWritten, file.Name()))
+
+	// We want to flush/close before passing on the work to the device. So do that now
+	writer.Close()
+	fstruct.Close()
 
 	work.StagingFileName = file.Name()
 	workChannel <- work
@@ -53,7 +63,7 @@ func HandleUpload(input io.Reader, work *Work, stagingDir string, workChannel ch
 	return
 }
 
-func HandleUploaderPost(c echo.Context) (err error) {
+func HandleUploaderPost(c echo.Context, workChannel chan *Work) (err error) {
 	version := c.P(0)
 	deviceId := c.P(1)
 	packageName := c.P(2)
@@ -74,7 +84,7 @@ func HandleUploaderPost(c echo.Context) (err error) {
 	stagingDir := filepath.Join(StagingDirBase, deviceId)
 	outDirBase := filepath.Join(OutDirBase, deviceId)
 
-	HandleUpload(body, work, stagingDir, PendingWorkChannel)
+	HandleUpload(body, work, stagingDir, workChannel)
 
 	// Currently unused
 	_ = body

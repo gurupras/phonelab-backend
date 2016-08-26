@@ -205,7 +205,7 @@ func cleanup() {
 	return
 }
 
-func RunTestServerAsync(port int, serverPtr **Server, workFuncs ...func(work *Work)) {
+func RunTestServerAsync(port int, workChannel chan *Work, serverPtr **Server, workFuncs ...func(work *Work)) {
 	var err error
 	if StagingDirBase, err = ioutil.TempDir("/tmp", "staging-"); err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to create staging dir")
@@ -224,8 +224,8 @@ func RunTestServerAsync(port int, serverPtr **Server, workFuncs ...func(work *Wo
 	// XXX: Should pending work handler be included here?
 	// If not, we would have to include it in every place that
 	// is looking to test an upload (currently, all tests in this file)
-	go PendingWorkHandler(workFuncs...)
-	*serverPtr, err = SetupServer(port, true)
+	go PendingWorkHandler(workChannel, workFuncs...)
+	*serverPtr, err = SetupServer(port, false, workChannel)
 	if err != nil {
 		panic(err)
 	}
@@ -267,4 +267,5 @@ func UploadFiles(port int, nDevices, filesPerDevice int, assert *assert.Assertio
 		}()
 	}
 	wg.Wait()
+	fmt.Println("Uploaded:", nDevices*filesPerDevice)
 }

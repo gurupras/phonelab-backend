@@ -28,23 +28,26 @@ func testHttpMethod(c echo.Context) (err error) {
 }
 
 func TestServerConstructor(t *testing.T) {
+	t.Parallel()
 	var server *Server
 	var err error
+	assert := assert.New(t)
 
 	server, err = New(-1)
-	assert.Nil(t, server, "Server was created with a negative port")
-	assert.NotNil(t, err, "No error on negative port")
+	assert.Nil(server, "Server was created with a negative port")
+	assert.NotNil(err, "No error on negative port")
 
 	server, err = New(65536)
-	assert.Nil(t, server, "Server was created with a out-of-bounds port")
-	assert.NotNil(t, err, "No error on out-of-bounds port")
+	assert.Nil(server, "Server was created with a out-of-bounds port")
+	assert.NotNil(err, "No error on out-of-bounds port")
 
 	server, err = New(14111)
-	assert.NotNil(t, server, "Server was not created despite valid port")
-	assert.Nil(t, err, "Error on valid port")
+	assert.NotNil(server, "Server was not created despite valid port")
+	assert.Nil(err, "Error on valid port")
 }
 
 func TestSetupServer(t *testing.T) {
+	t.Parallel()
 	var server *Server
 	var err error
 
@@ -60,6 +63,7 @@ func TestSetupServer(t *testing.T) {
 }
 
 func TestRunServer(t *testing.T) {
+	t.Parallel()
 	var err error
 
 	assert := assert.New(t)
