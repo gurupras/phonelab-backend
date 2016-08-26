@@ -103,7 +103,7 @@ func PendingWorkHandler(workFuncs ...func(work *Work)) {
 
 	// TODO: Currently, we only use the first function passed in
 	var workFunc func(work *Work)
-	if len(workFuncs) > 0 {
+	if workFuncs != nil && len(workFuncs) > 0 {
 		workFunc = workFuncs[0]
 	} else {
 		workFunc = ProcessStagedWork
