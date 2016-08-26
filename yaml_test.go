@@ -22,9 +22,12 @@ func generateFakeWork() *Work {
 func TestWorkToStagingMetadata(t *testing.T) {
 	assert := assert.New(t)
 
+	metadata := WorkToStagingMetadata(nil)
+	assert.Nil(metadata, "Got metadata from nil work")
+
 	work := generateFakeWork()
 
-	metadata := WorkToStagingMetadata(work)
+	metadata = WorkToStagingMetadata(work)
 	assert.Equal(metadata.Version, "1.0", "Version did not match")
 	assert.Equal(metadata.DeviceId, "dummy", "DeviceId did not match")
 	assert.Equal(metadata.PackageName, "com.example.test", "PackageName did not match")
