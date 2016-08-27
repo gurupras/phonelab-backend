@@ -21,8 +21,8 @@ func GenerateRandomLogline(bootId string, timeOffset int64, tokenNumber int64) s
 
 	tokens = append(tokens, fmt.Sprintf("%v", tokenNumber))
 
-	offset := (timeNow.UnixNano() - timeOffset) / 1000
-	tokens = append(tokens, fmt.Sprintf("[%f]", offset/1e6))
+	offset := float64((timeNow.UnixNano() - timeOffset))
+	tokens = append(tokens, fmt.Sprintf("[%v]", offset/1e6))
 
 	tokens = append(tokens, fmt.Sprintf("%v", rand.Int31n(32768)))
 	tokens = append(tokens, fmt.Sprintf("%v", rand.Int31n(32768)))
@@ -30,7 +30,7 @@ func GenerateRandomLogline(bootId string, timeOffset int64, tokenNumber int64) s
 	levels := []string{"V", "D", "I", "W", "E", "C", "WTF"}
 	tokens = append(tokens, levels[rand.Intn(len(levels))])
 
-	tag := fmt.Sprintf("DummyTag->%s%v", GenerateRandomString(rand.Intn(32)))
+	tag := fmt.Sprintf("DummyTag->%s", GenerateRandomString(rand.Intn(32)))
 	tokens = append(tokens, tag)
 
 	payload := GenerateRandomString(32 + rand.Intn(256))
