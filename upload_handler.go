@@ -1,6 +1,8 @@
 package phonelab_backend
 
 import (
+	"bytes"
+	"compress/gzip"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -13,38 +15,121 @@ import (
 	"github.com/labstack/echo"
 )
 
-func HandleUpload(input io.Reader, work *Work, stagingDir string, workChannel chan *Work) (bytesWritten int64, err error) {
+var (
+	StagingPreProcessing  []StagingProcess
+	StagingPostProcessing []StagingProcess
+)
+
+type StagingProcess func(work *Work) error
+
+func InitializeProcessingSteps() {
+	InitializeStagingProcessingSteps()
+	InitializeDeviceProcessingSteps()
+}
+
+func InitializeStagingProcessingSteps() {
+	StagingPreProcessing = append(StagingPreProcessing, UpdateStagingMetadata)
+}
+
+func UpdateStagingMetadata(work *Work) (err error) {
+	var fstruct *gocommons.File
+	var writer gocommons.Writer
+	var n int64
+
+	// The stream is already compressed
+	if fstruct, err = gocommons.Open(work.StagingFileName, os.O_APPEND|os.O_WRONLY, gocommons.GZ_FALSE); err != nil {
+		panic("Could not open tempfile")
+	}
+	defer fstruct.Close()
+
+	// Seek end
+	fstruct.Seek(0, os.SEEK_END)
+
+	// We first write all the metadata
+	if writer, err = fstruct.Writer(0); err != nil {
+		panic("Could not get writer to tempfile")
+	}
+	defer writer.Close()
+	defer writer.Flush()
+
+	metadataBuf := new(bytes.Buffer)
+	compressedWriter := gzip.NewWriter(metadataBuf)
+	WriteStagingMetadata(compressedWriter, work)
+	compressedWriter.Flush()
+	compressedWriter.Close()
+
+	if n, err = io.Copy(&writer, metadataBuf); err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to write metadata to:", work.StagingFileName)
+		return
+	}
+	_ = n
+	//fmt.Println(fmt.Sprintf("Wrote %d bytes", n))
+	return
+}
+
+func HandleUpload(input io.Reader, work *Work, workChannel chan *Work) (bytesWritten int64, err error) {
 	var file *os.File
 
-	gocommons.Makedirs(stagingDir)
-	if file, err = ioutil.TempFile(stagingDir, "log-"); err != nil {
+	gocommons.Makedirs(work.StagingDir)
+	if file, err = ioutil.TempFile(work.StagingDir, "log-"); err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to create temporary file", err)
 		return
 	}
-	path := file.Name()
+	file.Close()
+	os.Remove(file.Name())
+
+	path := file.Name() + ".gz"
+	if file, err = os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0644); err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to create temporary file with .gz extension", err)
+		return
+	}
 	file.Close()
 
 	// Now do the staging part
+	work.StagingFileName = path
 
+	// Pre processing
+	for _, process := range StagingPreProcessing {
+		if err = process(work); err != nil {
+			fmt.Fprintln(os.Stderr, "Failed pre-processing step", err)
+			return
+		}
+	}
 	// The stream is already compressed
-	fstruct, err := gocommons.Open(path, os.O_WRONLY, gocommons.GZ_FALSE)
+	fstruct, err := gocommons.Open(path, os.O_APPEND|os.O_WRONLY, gocommons.GZ_TRUE)
 	if err != nil {
 		panic("Could not open tempfile")
 	}
 
-	// We first write all the metadata
+	fstruct.Seek(0, os.SEEK_END)
+
 	writer, err := fstruct.Writer(0)
 	if err != nil {
 		panic("Could not get writer to tempfile")
 	}
 
-	WriteStagingMetadata(&writer, work)
-
-	if bytesWritten, err = io.Copy(&writer, input); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to copy input to:", file.Name)
+	// Do the payload copy
+	var compressedInput *gzip.Reader
+	if compressedInput, err = gzip.NewReader(input); err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to get gzip.Reader to input:", err)
 		return
 	}
+	if bytesWritten, err = io.Copy(&writer, compressedInput); err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to copy input to:", path, err)
+		return
+	}
+	writer.Close()
+	fstruct.Close()
 
+	// Post processing
+	for _, process := range StagingPostProcessing {
+		if err = process(work); err != nil {
+			fmt.Fprintln(os.Stderr, "Failed post-processing step", err)
+			return
+		}
+	}
+
+	// TODO: Move this to post-processing
 	err = os.Chmod(path, 0440)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, fmt.Sprintf("Failed to make staging "+
@@ -54,16 +139,12 @@ func HandleUpload(input io.Reader, work *Work, stagingDir string, workChannel ch
 	//fmt.Println(fmt.Sprintf("Wrote %v bytes to :%v", bytesWritten, file.Name()))
 
 	// We want to flush/close before passing on the work to the device. So do that now
-	writer.Close()
-	fstruct.Close()
-
-	work.StagingFileName = file.Name()
 	workChannel <- work
 
 	return
 }
 
-func HandleUploaderPost(c echo.Context, workChannel chan *Work) (err error) {
+func HandleUploaderPost(c echo.Context, config *Config) (err error) {
 	version := c.P(0)
 	deviceId := c.P(1)
 	packageName := c.P(2)
@@ -81,18 +162,16 @@ func HandleUploaderPost(c echo.Context, workChannel chan *Work) (err error) {
 	// The body is a compressed stream represented by io.Reader
 	body := c.Request().Body()
 
-	stagingDir := filepath.Join(StagingDirBase, deviceId)
-	outDirBase := filepath.Join(OutDirBase, deviceId)
+	work.StagingDir = filepath.Join(config.StagingDir, deviceId)
+	work.OutDir = filepath.Join(config.OutDir, deviceId)
 
-	HandleUpload(body, work, stagingDir, workChannel)
+	HandleUpload(body, work, config.WorkChannel)
 
 	// Currently unused
 	_ = body
-	_ = stagingDir
 	_ = version
 	_ = packageName
 	_ = fileName
-	_ = outDirBase
 
 	//fmt.Printf("Headers:\n%v\n", c.Request().Header())
 

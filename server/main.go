@@ -12,6 +12,8 @@ var (
 	port           *int
 	stagingDirBase *string
 	outDirBase     *string
+	stagingDir     string
+	outDir         string
 )
 
 func setup_parser() *kingpin.Application {
@@ -27,17 +29,23 @@ func ParseArgs(parser *kingpin.Application, args []string) {
 
 	// Now for the conversions
 	phonelab_backend.Port = *port
-	phonelab_backend.StagingDirBase = *stagingDirBase
-	phonelab_backend.OutDirBase = *outDirBase
+	stagingDir = *stagingDirBase
+	outDir = *outDirBase
 }
 
 func Main(args []string) (err error) {
 	parser := setup_parser()
 	ParseArgs(parser, args)
 
-	workChannel := make(chan *phonelab_backend.Work, 1000)
-	go phonelab_backend.PendingWorkHandler(workChannel)
-	server, err := phonelab_backend.SetupServer(phonelab_backend.Port, true, workChannel)
+	phonelab_backend.InitializeProcessingSteps()
+
+	config := new(phonelab_backend.Config)
+	config.WorkChannel = make(chan *phonelab_backend.Work, 1000)
+	config.StagingDir = stagingDir
+	config.OutDir = outDir
+
+	go phonelab_backend.PendingWorkHandler(config)
+	server, err := phonelab_backend.SetupServer(phonelab_backend.Port, config, true)
 	if err != nil {
 		return err
 	}

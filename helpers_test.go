@@ -1,26 +1,41 @@
-package phonelab_backend
+package phonelab_backend_test
 
 import (
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
 	"os"
+	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/shlex"
 	"github.com/gurupras/gocommons"
+	"github.com/gurupras/phonelab_backend"
 	"github.com/parnurzeal/gorequest"
 	"github.com/satori/go.uuid"
 	"github.com/stretchr/testify/assert"
+)
+
+var (
+	stagingDirGlobal string
+	outDirGlobal     string
 )
 
 const (
 	DONE    int = iota
 	PENDING int = iota
 )
+
+func Recover(name string) {
+	if r := recover(); r != nil {
+		fmt.Fprintln(os.Stderr, fmt.Sprintf("%s: FAILED\n%s\n%s\n", name, r, debug.Stack()))
+	}
+}
 
 func DataGenerator(channel chan string, stop chan interface{}) {
 	var shouldStop bool = false
@@ -130,7 +145,8 @@ func DeviceDataGenerator(deviceId string, port int, commChannel chan interface{}
 		if stop {
 			break
 		}
-		var file bytes.Buffer
+		file := new(bytes.Buffer)
+		fileWriter := gzip.NewWriter(file)
 		// Next file size. [MIN_REQ_SIZE, MAX_REQ_SIZE]
 		randomSize := MIN_REQ_SIZE + rand.Intn(MAX_REQ_SIZE-MIN_REQ_SIZE+1)
 		currentSize := 0
@@ -141,24 +157,26 @@ func DeviceDataGenerator(deviceId string, port int, commChannel chan interface{}
 			}
 			line := <-logChannel
 
-			file.WriteString(line)
+			fileWriter.Write([]byte(line))
 			currentSize += len(line)
 		}
 
-		handlePayload := func(payload string, size int) {
+		handlePayload := func(file *bytes.Buffer, size int) {
 			defer wg.Done()
 			stopMutex.Lock()
 			defer stopMutex.Unlock()
 			if stop {
 				return
 			}
+
 			commChannel <- PENDING
 			// Send back any data you want to
 			resp, body, err := gorequest.New().Post(url).
 				Set("Content-Length", fmt.Sprintf("%v", size)).
 				Set("Accept-Encoding", "gzip").
-				Set("Content-Type", "application/x-www-form-urlencoded").
-				Send(payload).
+				Set("Content-Encoding", "gzip").
+				Set("Content-Type", "multipart/form-data").
+				Send(file.String()).
 				End()
 			commChannel <- DONE
 
@@ -179,7 +197,9 @@ func DeviceDataGenerator(deviceId string, port int, commChannel chan interface{}
 			}
 		}
 		wg.Add(1)
-		go handlePayload(file.String(), currentSize)
+		fileWriter.Flush()
+		fileWriter.Close()
+		go handlePayload(file, currentSize)
 		//fmt.Println(resp)
 
 		//fmt.Println(fmt.Sprintf("%s: Sent file of size: %d bytes", deviceId, currentSize))
@@ -187,10 +207,16 @@ func DeviceDataGenerator(deviceId string, port int, commChannel chan interface{}
 	wg.Wait()
 }
 
-func cleanup() {
+func cleanup(directories ...string) {
 	// We need to clean up
-	fmt.Println("Cleaning up")
-	directoriesToDelete := []string{StagingDirBase, OutDirBase}
+	//fmt.Println("Cleaning up")
+	var directoriesToDelete []string
+	if directories == nil || len(directories) == 0 {
+		directoriesToDelete = []string{stagingDirGlobal, outDirGlobal}
+	} else {
+		directoriesToDelete = directories
+	}
+
 	for _, dir := range directoriesToDelete {
 		cmdline := fmt.Sprintf("rm -rf %v", dir)
 		if args, err := shlex.Split(cmdline); err != nil {
@@ -205,17 +231,32 @@ func cleanup() {
 	return
 }
 
-func RunTestServerAsync(port int, workChannel chan *Work, serverPtr **Server, workFuncs ...func(work *Work)) {
+func RunTestServerAsync(port int, config *phonelab_backend.Config, serverPtr **phonelab_backend.Server, workFuncs ...func(work *phonelab_backend.Work)) {
+
 	var err error
-	if StagingDirBase, err = ioutil.TempDir("/tmp", "staging-"); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to create staging dir")
-		os.Exit(-1)
+	defer Recover("RunTestServerAsync")
+
+	if config == nil {
+		config = &phonelab_backend.Config{}
+		config.WorkChannel = make(chan *phonelab_backend.Work, 1000)
 	}
 
-	if OutDirBase, err = ioutil.TempDir("/tmp", "outdir-"); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to create outdir")
-		os.Exit(-1)
+	if strings.Compare(config.StagingDir, "") == 0 {
+		if config.StagingDir, err = ioutil.TempDir("/tmp", "staging-"); err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to create staging dir")
+			os.Exit(-1)
+		}
 	}
+
+	if strings.Compare(config.OutDir, "") == 0 {
+		if config.OutDir, err = ioutil.TempDir("/tmp", "outdir-"); err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to create outdir")
+			os.Exit(-1)
+		}
+	}
+
+	stagingDirGlobal = config.StagingDir
+	outDirGlobal = config.OutDir
 
 	// FIXME: Port should probably be part of command line arguments
 	// or a config file. Currently, this is hard-coded.
@@ -224,12 +265,22 @@ func RunTestServerAsync(port int, workChannel chan *Work, serverPtr **Server, wo
 	// XXX: Should pending work handler be included here?
 	// If not, we would have to include it in every place that
 	// is looking to test an upload (currently, all tests in this file)
-	go PendingWorkHandler(workChannel, workFuncs...)
-	*serverPtr, err = SetupServer(port, false, workChannel)
+	pendingWorkHandlerWg := sync.WaitGroup{}
+	pendingWorkHandlerWg.Add(1)
+	go func() {
+		defer pendingWorkHandlerWg.Done()
+		phonelab_backend.PendingWorkHandler(config, workFuncs...)
+	}()
+	*serverPtr, err = phonelab_backend.SetupServer(port, config, false)
 	if err != nil {
 		panic(err)
 	}
-	RunServer(*serverPtr)
+	//fmt.Println("Running server on port:", port)
+	phonelab_backend.RunServer(*serverPtr)
+	fmt.Println("Attempting to close work channel")
+	config.CloseWorkChannel()
+	pendingWorkHandlerWg.Wait()
+	fmt.Println("Closed server")
 }
 
 // Expects server to be started
@@ -267,5 +318,5 @@ func UploadFiles(port int, nDevices, filesPerDevice int, assert *assert.Assertio
 		}()
 	}
 	wg.Wait()
-	fmt.Println("Uploaded:", nDevices*filesPerDevice)
+	//fmt.Println("Uploaded:", nDevices*filesPerDevice)
 }

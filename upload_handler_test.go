@@ -1,35 +1,46 @@
-package phonelab_backend
+package phonelab_backend_test
 
 import (
-	"fmt"
-	"os"
-	"sync"
 	"testing"
-	"time"
 
+	"github.com/gurupras/phonelab_backend"
 	"github.com/stretchr/testify/assert"
 )
 
+/*
 func TestUpload(t *testing.T) {
 	t.Parallel()
-	var server *Server
+	var server *phonelab_backend.Server
 	assert := assert.New(t)
 
-	workChannel := make(chan *Work, 1000)
-	go RunTestServerAsync(8083, workChannel, &server)
+	defer Recover("TestUpload")
+
+	phonelab_backend.InitializeProcessingSteps()
+
+	workFn := func(work *phonelab_backend.Work) {
+		// Dummy work function. We're only testing whether server
+		// correctly receives upload and stages it
+	}
+	workChannel := make(chan *phonelab_backend.Work, 1000)
+	go RunTestServerAsync(8083, "", "", workChannel, &server, workFn)
 
 	UploadFiles(8083, 1, 1, assert)
 	server.Stop()
 	cleanup()
 }
-
+*/
+/*
 func TestLoadCapability(t *testing.T) {
 	t.Parallel()
-	var server *Server
+	var server *phonelab_backend.Server
 	assert := assert.New(t)
 
-	workChannel := make(chan *Work, 1000)
-	go RunTestServerAsync(8084, workChannel, &server)
+	defer Recover("TestLoadCapability")
+
+	phonelab_backend.InitializeProcessingSteps()
+
+	workChannel := make(chan *phonelab_backend.Work, 1000)
+	go RunTestServerAsync(8084, "", "", workChannel, &server)
 
 	devices := LoadDevicesFromFile("deviceids.txt", assert)
 
@@ -89,5 +100,34 @@ func TestLoadCapability(t *testing.T) {
 	fmt.Println("Stopping server ...")
 	//TODO: Server stop logic
 	server.Stop()
-	cleanup()
+	//cleanup()
+}
+*/
+
+func TestAddStagingMetadata(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+
+	defer Recover("TestAddStagingMetadata")
+
+	stagingDirBase := "/tmp/staging-test-add-metadata/"
+	outDirBase := "/tmp/out-test-add-metadata/"
+
+	port := 31121
+	var server *phonelab_backend.Server
+	config := new(phonelab_backend.Config)
+	config.WorkChannel = make(chan *phonelab_backend.Work, 1000)
+	config.StagingDir = stagingDirBase
+	config.OutDir = outDirBase
+
+	phonelab_backend.InitializeStagingProcessingSteps()
+
+	workFn := func(work *phonelab_backend.Work) {
+		// Do nothing. We're only testing adding staging metadata
+	}
+
+	go RunTestServerAsync(port, config, &server, workFn)
+	UploadFiles(port, 1, 1, assert)
+	server.Stop()
+	cleanup(stagingDirBase, outDirBase)
 }

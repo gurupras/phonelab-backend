@@ -15,6 +15,15 @@ type StagingMetadata struct {
 	UploadTimestamp int64  `yaml:upload_timestamp`
 }
 
+type OutMetadata struct {
+	Versions         []string `yaml:Versions`
+	DeviceId         string   `yaml:device_id`
+	PackageNames     []string `yaml:package_names`
+	UploadTimestamps []int64  `yaml:upload_timestamps`
+	StartTimestamps  []int64  `yaml:start_timestamp`
+	EndTimestamps    []int64  `yaml:end_timestamp`
+}
+
 func WorkToStagingMetadata(work *Work) *StagingMetadata {
 	if work == nil {
 		return nil

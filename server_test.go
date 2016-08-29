@@ -1,4 +1,4 @@
-package phonelab_backend
+package phonelab_backend_test
 
 import (
 	"bytes"
@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gurupras/phonelab_backend"
 	"github.com/labstack/echo"
 	"github.com/parnurzeal/gorequest"
 	"github.com/stretchr/testify/assert"
@@ -29,35 +30,41 @@ func testHttpMethod(c echo.Context) (err error) {
 
 func TestServerConstructor(t *testing.T) {
 	t.Parallel()
-	var server *Server
+	var server *phonelab_backend.Server
 	var err error
 	assert := assert.New(t)
 
-	server, err = New(-1)
+	defer Recover("TestServerConstructor")
+
+	server, err = phonelab_backend.New(-1)
 	assert.Nil(server, "Server was created with a negative port")
 	assert.NotNil(err, "No error on negative port")
 
-	server, err = New(65536)
+	server, err = phonelab_backend.New(65536)
 	assert.Nil(server, "Server was created with a out-of-bounds port")
 	assert.NotNil(err, "No error on out-of-bounds port")
 
-	server, err = New(14111)
+	server, err = phonelab_backend.New(14111)
 	assert.NotNil(server, "Server was not created despite valid port")
 	assert.Nil(err, "Error on valid port")
 }
 
 func TestSetupServer(t *testing.T) {
 	t.Parallel()
-	var server *Server
+	var server *phonelab_backend.Server
 	var err error
 
 	assert := assert.New(t)
 
-	server, err = SetupServer(-1, false)
+	defer Recover("TestSetupServer")
+
+	config := new(phonelab_backend.Config)
+
+	server, err = phonelab_backend.SetupServer(-1, config, false)
 	assert.Nil(server, "Server was created with a negative port")
 	assert.NotNil(err, "No error on negative port")
 
-	server, err = SetupServer(14112, false)
+	server, err = phonelab_backend.SetupServer(14112, config, false)
 	assert.True(server != nil, "Server was not created despite valid port")
 	assert.True(err == nil, "Error on valid port")
 }
@@ -68,9 +75,11 @@ func TestRunServer(t *testing.T) {
 
 	assert := assert.New(t)
 
+	defer Recover("TestRunServer")
+
 	go func() {
-		var server *Server
-		server, err = New(8082)
+		var server *phonelab_backend.Server
+		server, err = phonelab_backend.New(8082)
 		assert.Nil(err, "Failed to start server", err)
 		server.POST("/uploader/:version/:deviceId/:packageName/:fileName", testHttpMethod)
 		// Start the server

@@ -36,14 +36,14 @@ func (s *Server) Stop() {
 
 var (
 	Port           int
-	StagingDirBase string
-	OutDirBase     string
+	stagingDirBase string
+	outDirBase     string
 )
 
 func addRoutes(server *Server) {
 }
 
-func SetupServer(port int, useLogger bool, workChannels ...chan *Work) (server *Server, err error) {
+func SetupServer(port int, config *Config, useLogger bool) (server *Server, err error) {
 	if server, err = New(port); err != nil {
 		return
 	}
@@ -52,15 +52,12 @@ func SetupServer(port int, useLogger bool, workChannels ...chan *Work) (server *
 		server.Use(middleware.Logger())
 	}
 
-	var workChannel chan *Work
-	if workChannels == nil || len(workChannels) == 0 {
-		workChannel = make(chan *Work, 1000)
-	} else {
-		workChannel = workChannels[0]
+	if config.WorkChannel == nil {
+		config.WorkChannel = make(chan *Work, 1000)
 	}
 	// Set up the routes
 	handleUploaderPost := func(c echo.Context) error {
-		return HandleUploaderPost(c, workChannel)
+		return HandleUploaderPost(c, config)
 	}
 	server.POST("/uploader/:version/:deviceId/:packageName/:fileName", handleUploaderPost)
 	return server, err

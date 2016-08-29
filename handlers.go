@@ -2,6 +2,7 @@ package phonelab_backend
 
 import (
 	"bytes"
+	"compress/gzip"
 	"fmt"
 	"io"
 	"os"
@@ -19,15 +20,30 @@ type Work struct {
 	LogFileName     string
 	UploadTimestamp int64
 	StagingFileName string
+	StagingDir      string
+	OutDir          string
+}
+
+type Config struct {
+	WorkChannel     chan *Work
+	StagingDir      string
+	OutDir          string
+	WorkChannelLock sync.Mutex
+}
+
+func (c *Config) CloseWorkChannel() {
+	c.WorkChannelLock.Lock()
+	close(c.WorkChannel)
+	c.WorkChannelLock.Unlock()
 }
 
 var (
 	DeviceWorkChannel map[string]chan *Work
 )
 
-func MakeStagedFilesPending(stagingDir string, pendingWorkChannel chan *Work) error {
+func MakeStagedFilesPending(config *Config) error {
 	var err error
-	files, err := gocommons.ListFiles(stagingDir, []string{"log-*"})
+	files, err := gocommons.ListFiles(config.StagingDir, []string{"log-*"})
 	if err != nil {
 		return err
 	}
@@ -45,13 +61,23 @@ func MakeStagedFilesPending(stagingDir string, pendingWorkChannel chan *Work) er
 		}
 		// XXX: Hard-coded to 1K
 		buf := new(bytes.Buffer)
+
 		_, err = io.CopyN(buf, file, 1024)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to read data from staged file\n", err)
 			return
 		}
+
+		var gzipReader *gzip.Reader
+		if gzipReader, err = gzip.NewReader(buf); err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to obtain reader to compressed stream", err)
+			return
+		}
+		uncompressedBuf := new(bytes.Buffer)
+		io.Copy(uncompressedBuf, gzipReader)
+
 		stagingMetadata := StagingMetadata{}
-		err = yaml.Unmarshal(buf.Bytes(), &stagingMetadata)
+		err = yaml.Unmarshal(uncompressedBuf.Bytes(), &stagingMetadata)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to unmarshall staging metadata\n", err)
 			return
@@ -63,7 +89,7 @@ func MakeStagedFilesPending(stagingDir string, pendingWorkChannel chan *Work) er
 			PackageName:     stagingMetadata.PackageName,
 			UploadTimestamp: stagingMetadata.UploadTimestamp,
 		}
-		pendingWorkChannel <- work
+		config.WorkChannel <- work
 	}
 	for _, file := range files {
 		// Read the YAML metadata and create a work struct from it
@@ -71,6 +97,7 @@ func MakeStagedFilesPending(stagingDir string, pendingWorkChannel chan *Work) er
 		go stagedFileToPendingWork(file)
 	}
 	wg.Wait()
+	fmt.Println(fmt.Sprintf("Staged %s - %d", config.StagingDir, len(files)))
 	return err
 }
 
@@ -92,7 +119,7 @@ func DeviceWorkHandler(deviceId string, workChannel chan *Work, workFn func(work
 	}
 }
 
-func PendingWorkHandler(workChannel chan *Work, workFuncs ...func(work *Work)) {
+func PendingWorkHandler(config *Config, workFuncs ...func(work *Work)) {
 	var work *Work
 	var ok bool
 	var deviceWorkChannel chan *Work
@@ -108,7 +135,9 @@ func PendingWorkHandler(workChannel chan *Work, workFuncs ...func(work *Work)) {
 	DeviceWorkChannel := make(map[string]chan *Work)
 
 	// Find all files in the staging area and re-assign them as pending work
-	MakeStagedFilesPending(StagingDirBase, workChannel)
+	config.WorkChannelLock.Lock()
+	MakeStagedFilesPending(config)
+	config.WorkChannelLock.Unlock()
 
 	wg := sync.WaitGroup{}
 	// Local function wrapping around DeviceWorkHandler to ensure that
@@ -122,7 +151,7 @@ func PendingWorkHandler(workChannel chan *Work, workFuncs ...func(work *Work)) {
 	delegated := 0
 	for {
 		//fmt.Println("Waiting for work")
-		if work, ok = <-workChannel; !ok {
+		if work, ok = <-config.WorkChannel; !ok {
 			fmt.Fprintln(os.Stderr, "workChannel closed?")
 			break
 		}
@@ -144,5 +173,5 @@ func PendingWorkHandler(workChannel chan *Work, workFuncs ...func(work *Work)) {
 		close(DeviceWorkChannel[device])
 	}
 	wg.Wait()
-	fmt.Println(fmt.Sprintf("Delegated %d tasks", delegated))
+	//fmt.Println(fmt.Sprintf("Delegated %d tasks", delegated))
 }

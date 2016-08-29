@@ -1,4 +1,4 @@
-package phonelab_backend
+package phonelab_backend_test
 
 import (
 	"bytes"
@@ -6,11 +6,12 @@ import (
 
 	"gopkg.in/yaml.v2"
 
+	"github.com/gurupras/phonelab_backend"
 	"github.com/stretchr/testify/assert"
 )
 
-func generateFakeWork() *Work {
-	work := &Work{
+func generateFakeWork() *phonelab_backend.Work {
+	work := &phonelab_backend.Work{
 		Version:         "1.0",
 		DeviceId:        "dummy",
 		PackageName:     "com.example.test",
@@ -22,12 +23,14 @@ func generateFakeWork() *Work {
 func TestWorkToStagingMetadata(t *testing.T) {
 	assert := assert.New(t)
 
-	metadata := WorkToStagingMetadata(nil)
+	defer Recover("TestWorkToStagingMetadata")
+
+	metadata := phonelab_backend.WorkToStagingMetadata(nil)
 	assert.Nil(metadata, "Got metadata from nil work")
 
 	work := generateFakeWork()
 
-	metadata = WorkToStagingMetadata(work)
+	metadata = phonelab_backend.WorkToStagingMetadata(work)
 	assert.Equal(metadata.Version, "1.0", "Version did not match")
 	assert.Equal(metadata.DeviceId, "dummy", "DeviceId did not match")
 	assert.Equal(metadata.PackageName, "com.example.test", "PackageName did not match")
@@ -39,25 +42,29 @@ func TestGenerateStagingMetadata(t *testing.T) {
 
 	assert := assert.New(t)
 
+	defer Recover("TestGenerateStagingMetadata")
+
 	work := generateFakeWork()
-	metadata = GenerateStagingMetadata(work)
+	metadata = phonelab_backend.GenerateStagingMetadata(work)
 	assert.NotNil(metadata, "No metadata from proper work")
 }
 
 func TestWriteStagingMetadata(t *testing.T) {
 	var err error
-	var work *Work
+	var work *phonelab_backend.Work
 	var buf bytes.Buffer
-	var yamlStruct StagingMetadata
+	var yamlStruct phonelab_backend.StagingMetadata
 
 	assert := assert.New(t)
 
+	defer Recover("TestWriteStagingMetadata")
+
 	work = generateFakeWork()
 
-	err = WriteStagingMetadata(&buf, work)
+	err = phonelab_backend.WriteStagingMetadata(&buf, work)
 	assert.Nil(err, "Error in writing YAML metadata")
 
-	yamlStruct = StagingMetadata{}
+	yamlStruct = phonelab_backend.StagingMetadata{}
 	err = yaml.Unmarshal(buf.Bytes(), &yamlStruct)
 	assert.Nil(err, "Failed to unmarshal marshalled metadata")
 
@@ -73,7 +80,7 @@ func TestWriteStagingMetadata(t *testing.T) {
 	assert.Equal(len(payload), n, "Failed to write all the bytes")
 	assert.Nil(err, "Error while adding payload")
 
-	yamlStruct = StagingMetadata{}
+	yamlStruct = phonelab_backend.StagingMetadata{}
 	err = yaml.Unmarshal(buf.Bytes(), &yamlStruct)
 	assert.Nil(err, "Failed to unmarshal marshalled metadata")
 
@@ -81,5 +88,4 @@ func TestWriteStagingMetadata(t *testing.T) {
 	assert.Equal(yamlStruct.DeviceId, "dummy", "DeviceId did not match")
 	assert.Equal(yamlStruct.PackageName, "com.example.test", "PackageName did not match")
 	assert.Equal(yamlStruct.UploadTimestamp, int64(14), "UploadTimestamp did not match")
-
 }

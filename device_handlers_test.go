@@ -1,15 +1,15 @@
-package phonelab_backend
+package phonelab_backend_test
 
 import (
 	"bufio"
 	"fmt"
 	"io/ioutil"
 	"os"
-	"strings"
 	"sync"
 	"testing"
 
 	"github.com/gurupras/gocommons"
+	"github.com/gurupras/phonelab_backend"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -17,8 +17,10 @@ func TestProcessStagedWork(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
+	defer Recover("TestProcessStagedWork")
+
 	var port int = 11929
-	var server *Server
+	var server *phonelab_backend.Server
 
 	var (
 		started         int = 0
@@ -28,40 +30,50 @@ func TestProcessStagedWork(t *testing.T) {
 		totalFiles      int = nDevices * nFilesPerDevice
 	)
 
+	phonelab_backend.InitializeProcessingSteps()
+
 	wg := sync.WaitGroup{}
 	mutex := sync.Mutex{}
 
-	preProcess := func(w *DeviceWork) (err error) {
+	preProcess := func(w *phonelab_backend.DeviceWork) (err error) {
+		//fmt.Println("preProcess")
 		mutex.Lock()
 		started++
 		mutex.Unlock()
 		return
 	}
-	postProcess := func(w *DeviceWork) (err error) {
+	postProcess := func(w *phonelab_backend.DeviceWork) (err error) {
 		mutex.Lock()
 		verified++
+		//fmt.Println("Verified:", verified)
 		if verified == totalFiles {
 			wg.Done()
 		}
 		mutex.Unlock()
 		return
 	}
-	customWorkFn := func(w *Work) {
-		ProcessStagedWork(w)
+	customWorkFn := func(w *phonelab_backend.Work) {
+		phonelab_backend.ProcessStagedWork(w)
 	}
 
-	PreProcessing = append(PreProcessing, preProcess)
-	PostProcessing = append(PostProcessing, postProcess)
+	phonelab_backend.PreProcessing = append(phonelab_backend.PreProcessing, preProcess)
+	phonelab_backend.PostProcessing = append(phonelab_backend.PostProcessing, postProcess)
 
 	wg.Add(1)
 
-	workChannel := make(chan *Work, 1000)
-	go RunTestServerAsync(port, workChannel, &server, customWorkFn)
+	config := new(phonelab_backend.Config)
+	config.WorkChannel = make(chan *phonelab_backend.Work, 1000)
+	serverWg := sync.WaitGroup{}
+	serverWg.Add(1)
+	go func() {
+		defer serverWg.Done()
+		RunTestServerAsync(port, config, &server, customWorkFn)
+	}()
 	UploadFiles(port, nDevices, nFilesPerDevice, assert)
 
-	close(workChannel)
 	wg.Wait()
 	server.Stop()
+	serverWg.Wait()
 	cleanup()
 
 	assert.Equal(started, verified, fmt.Sprintf("Started(%d) != verified(%d)", started, verified))
@@ -71,12 +83,14 @@ func TestOpenFileAndReader(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
+	defer Recover("TestOpenFileAndReader")
+
 	var fstruct *gocommons.File
 	var reader *bufio.Scanner
 	var err error
 
 	// Should fail
-	fstruct, reader, err = OpenFileAndReader("/deadbeef")
+	fstruct, reader, err = phonelab_backend.OpenFileAndReader("/deadbeef")
 	assert.Nil(fstruct, "No error on non-existent file")
 	assert.Nil(reader, "No error on non-existent file")
 	assert.NotNil(err, "No error on non-existent file")
@@ -85,14 +99,14 @@ func TestOpenFileAndReader(t *testing.T) {
 	f, err := ioutil.TempFile("/tmp", "wronly-")
 	assert.Nil(err, "Failed to create temporary write-only file")
 	f.Chmod(0222)
-	fstruct, reader, err = OpenFileAndReader(f.Name())
+	fstruct, reader, err = phonelab_backend.OpenFileAndReader(f.Name())
 	assert.Nil(fstruct, "No error on write-only file")
 	assert.Nil(reader, "No error on write-only file")
 	assert.NotNil(err, "No error on write-only file")
 
 	// Now succeed on proper file
 	f.Chmod(0666)
-	fstruct, reader, err = OpenFileAndReader(f.Name())
+	fstruct, reader, err = phonelab_backend.OpenFileAndReader(f.Name())
 	assert.NotNil(fstruct, "Error on proper file")
 	assert.NotNil(reader, "Error on proper file")
 	assert.Nil(err, "Error on proper file")
@@ -102,17 +116,18 @@ func TestOpenFileAndReader(t *testing.T) {
 	os.Remove(f.Name())
 }
 
+/*
 func TestReadFileInReverse(t *testing.T) {
 	assert := assert.New(t)
 
 	port := 21331
 
-	workChannel := make(chan *Work)
-	var server *Server
-	var work *Work
+	workChannel := make(chan *phonelab_backend.Work)
+	var server *phonelab_backend.Server
+	var work *phonelab_backend.Work
 	wg := sync.WaitGroup{}
 
-	workFn := func(w *Work) {
+	workFn := func(w *phonelab_backend.Work) {
 		work = w
 		server.Stop()
 	}
@@ -128,7 +143,7 @@ func TestReadFileInReverse(t *testing.T) {
 	// Now the server is down and we have a file uploaded
 	fpath := work.StagingFileName
 	os.Chmod(fpath, 0666)
-	fstruct, err := gocommons.Open(fpath, os.O_RDWR, gocommons.GZ_UNKNOWN)
+	fstruct, err := gocommons.Open(fpath, os.O_RDWR, gocommons.GZ_TRUE)
 	assert.Nil(err, "Failed to open file from work", err)
 	assert.NotNil(fstruct, "Failed to open file from work")
 
@@ -151,7 +166,7 @@ func TestReadFileInReverse(t *testing.T) {
 
 	lineChannel := make(chan string)
 	commChannel := make(chan struct{})
-	go ReadFileInReverse(fstruct.File, lineChannel, commChannel)
+	go phonelab_backend.ReadFileInReverse(fstruct.File, lineChannel, commChannel)
 
 	var line string
 	var ok bool
@@ -172,3 +187,28 @@ func TestReadFileInReverse(t *testing.T) {
 	fstruct.Close()
 	cleanup()
 }
+*/
+
+/*
+func TestAddOutMetadata(t *testing.T) {
+	assert := assert.New(t)
+
+	phonelab_backend.StagingDirBase = "/tmp/test-add-metadata/stage"
+	phonelab_backend.OutDirBase = "/tmp/test-add-metadata/out"
+
+	port := 31121
+	var server *phonelab_backend.Server
+	workChannel := make(chan *phonelab_backend.Work, 1000)
+
+	appendMetadata := func(work *phonelab_backend.DeviceWork) {
+
+	}
+
+	phonelab_backend.InitializeProcessingSteps()
+	phonelab_backend.PostProcessing = []phonelab_backend.ProcessingFunction{appendMetadata}
+
+	go RunTestServerAsync(port, &server, workChannel)
+	UploadFiles(port, 1, 1, assert)
+	server.Stop()
+}
+*/
