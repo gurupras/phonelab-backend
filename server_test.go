@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func postRequest() (gorequest.Response, []error) {
-	url := "http://localhost:8082/uploader/version/deviceid/packagename/filename"
+func postRequest(port int) (gorequest.Response, []error) {
+	url := fmt.Sprintf("http://localhost:%d/uploader/version/deviceid/packagename/filename", port)
 	payload := "hello world"
 	resp, _, err := gorequest.New().Post(url).
 		Set("Content-Length", fmt.Sprintf("%v", len(payload))).
@@ -73,20 +73,22 @@ func TestRunServer(t *testing.T) {
 	t.Parallel()
 	var err error
 
+	var port int = 8082
+
 	assert := assert.New(t)
 
 	defer Recover("TestRunServer")
 
 	go func() {
 		var server *phonelab_backend.Server
-		server, err = phonelab_backend.New(8082)
+		server, err = phonelab_backend.New(port)
 		assert.Nil(err, "Failed to start server", err)
 		server.POST("/uploader/:version/:deviceId/:packageName/:fileName", testHttpMethod)
 		// Start the server
 		server.Run()
 	}()
 	time.Sleep(300 * time.Millisecond)
-	resp, errors := postRequest()
+	resp, errors := postRequest(port)
 	buf := new(bytes.Buffer)
 	buf.ReadFrom(resp.Body)
 	payload := buf.String()
