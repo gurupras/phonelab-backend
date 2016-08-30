@@ -88,6 +88,7 @@ func MakeStagedFilesPending(config *Config) error {
 			DeviceId:        stagingMetadata.DeviceId,
 			PackageName:     stagingMetadata.PackageName,
 			UploadTimestamp: stagingMetadata.UploadTimestamp,
+			OutDir:          config.OutDir,
 		}
 		config.WorkChannel <- work
 	}

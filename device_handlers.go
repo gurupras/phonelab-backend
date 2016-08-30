@@ -39,6 +39,7 @@ func InitializeDeviceProcessingSteps() {
 func ProcessStagedWork(work *Work) {
 	var err error
 	var file *os.File
+	var n int64
 
 	deviceWork := &DeviceWork{
 		Work: work,
@@ -66,17 +67,29 @@ func ProcessStagedWork(work *Work) {
 		return
 	}
 
+	//fmt.Println("Input:", file.Name())
+	//fmt.Println("Output:", deviceWork.OutFile.Path)
+
 	//fmt.Println("Processing ...")
 	var outWriter gocommons.Writer
-	if outWriter, err = deviceWork.OutFile.Writer(1048576); err != nil {
-		if _, err = io.Copy(&outWriter, compressedReader); err != nil {
+	var outFile *gocommons.File
+
+	if outFile, err = gocommons.Open(deviceWork.OutFile.Path, os.O_WRONLY|os.O_APPEND, gocommons.GZ_TRUE); err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to open file for writing data", err)
+		return
+	}
+	defer outFile.Close()
+
+	if outWriter, err = outFile.Writer(1048576); err != nil {
+		if n, err = io.Copy(&outWriter, compressedReader); err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to copy from staging to out", err)
 		}
 	}
 	outWriter.Flush()
 	outWriter.Close()
 
-	//fmt.Println("Updated outfile")
+	_ = n
+	//fmt.Println("Updated outfile:", n)
 
 	// Now for post-processing
 	for _, process := range PostProcessing {
@@ -129,9 +142,11 @@ func UpdateOutFile(work *DeviceWork) error {
 	}
 	//fmt.Println("BootID:", work.BootId)
 
-	if err = gocommons.Makedirs(work.Work.OutDir); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to create output directory", err)
-		return err
+	if ok, err := gocommons.Exists(work.Work.OutDir); !ok || err != nil {
+		if err = gocommons.Makedirs(work.Work.OutDir); err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to create output directory", err)
+			return err
+		}
 	}
 
 	outfile := filepath.Join(work.Work.OutDir, work.BootId+".gz")
