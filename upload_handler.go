@@ -110,11 +110,15 @@ func HandleUpload(input io.Reader, work *Work, workChannel chan *Work) (bytesWri
 
 	// Do the payload copy
 	var compressedInput *gzip.Reader
+	var inputReader io.Reader
+
 	if compressedInput, err = gzip.NewReader(input); err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to get gzip.Reader to input:", err)
-		return
+		inputReader = input
+	} else {
+		inputReader = compressedInput
 	}
-	if bytesWritten, err = io.Copy(&writer, compressedInput); err != nil {
+	if bytesWritten, err = io.Copy(&writer, inputReader); err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to copy input to:", path, err)
 		return
 	}

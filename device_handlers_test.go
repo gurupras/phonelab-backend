@@ -14,7 +14,7 @@ import (
 )
 
 func TestProcessStagedWork(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 	assert := assert.New(t)
 
 	defer Recover("TestProcessStagedWork")
@@ -80,7 +80,7 @@ func TestProcessStagedWork(t *testing.T) {
 }
 
 func TestOpenFileAndReader(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 	assert := assert.New(t)
 
 	defer Recover("TestOpenFileAndReader")

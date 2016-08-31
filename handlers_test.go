@@ -14,7 +14,7 @@ import (
 )
 
 func TestDeviceWorkHandler(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 	assert := assert.New(t)
 
 	defer Recover("TestDeviceWorkHandler")
@@ -48,7 +48,7 @@ func TestDeviceWorkHandler(t *testing.T) {
 }
 
 func TestPendingWorkHandler(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 	var err error
 	assert := assert.New(t)
 
@@ -154,7 +154,7 @@ func TestPendingWorkHandler(t *testing.T) {
 }
 
 func TestMakeStagedFilesPending(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 	var err error
 	assert := assert.New(t)
 
@@ -254,7 +254,7 @@ func TestMakeStagedFilesPending(t *testing.T) {
 		}()
 		wg.Wait()
 		assert.Equal(totalFiles, verified, fmt.Sprintf("total(%d) != verified(%d)", totalFiles, verified))
-		cleanup(config.StagingDir, config.OutDir)
+		//cleanup(config.StagingDir, config.OutDir)
 	}
 
 	for i := 0; i < numIterations; i++ {

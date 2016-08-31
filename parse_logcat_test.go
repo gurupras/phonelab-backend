@@ -50,7 +50,7 @@ func GenerateRandomString(length int) string {
 }
 
 func TestCheckLogcatPattern(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 	assert := assert.New(t)
 
 	defer Recover("TestCheckLogcatPattern")

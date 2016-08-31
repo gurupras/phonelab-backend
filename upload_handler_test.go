@@ -10,7 +10,7 @@ import (
 
 /*
 func TestUpload(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 	var server *phonelab_backend.Server
 	assert := assert.New(t)
 
@@ -32,7 +32,7 @@ func TestUpload(t *testing.T) {
 */
 /*
 func TestLoadCapability(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 	var server *phonelab_backend.Server
 	assert := assert.New(t)
 
@@ -106,7 +106,7 @@ func TestLoadCapability(t *testing.T) {
 */
 
 func TestAddStagingMetadata(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 	assert := assert.New(t)
 
 	defer Recover("TestAddStagingMetadata")
