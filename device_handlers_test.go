@@ -35,6 +35,14 @@ func TestProcessStagedWork(t *testing.T) {
 	assert.NotNil(err, "Pre-processing error not properly handled")
 	phonelab_backend.PreProcessing = phonelab_backend.PreProcessing[:0]
 
+	// Now test core-processing error handling
+	dummyCoreProcess := func(work *phonelab_backend.DeviceWork) (err error) {
+		return errors.New("Expected")
+	}
+	phonelab_backend.PostProcessing = append(phonelab_backend.PostProcessing, errFn)
+	err = phonelab_backend.ProcessStagedWork(dummyWork, dummyCoreProcess)
+	assert.NotNil(err, "Core-processing error not properly handled")
+
 	// Now test post-processing error handling
 	// We create a dummy core process and feed this into ProcessStagedWork
 	dummyCoreProcess := func(work *phonelab_backend.DeviceWork) (err error) {
