@@ -36,8 +36,17 @@ func InitializeDeviceProcessingSteps() {
 	PostProcessing = append(PostProcessing, UpdateMetadata)
 }
 
-func ProcessStagedWork(work *Work) {
-	var err error
+func ProcessStage(functions []ProcessingFunction, work *DeviceWork) (err error) {
+	for _, fn := range functions {
+		if err = fn(work); err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to run processing stage:", err)
+			return
+		}
+	}
+	return
+}
+
+func ProcessStagedWork(work *Work, processes ...ProcessingFunction) (err error) {
 	var file *os.File
 	var n int64
 
@@ -46,55 +55,64 @@ func ProcessStagedWork(work *Work) {
 	}
 
 	//fmt.Println("Starting pre-processing")
-	for _, process := range PreProcessing {
-		err = process(deviceWork)
+	if err = ProcessStage(PreProcessing, deviceWork); err != nil {
+		return
+	}
+
+	defaultProcess := func(deviceWork *DeviceWork) (err error) {
+		// Actual processing I guess
+		file, err = os.OpenFile(work.StagingFileName, os.O_RDONLY, 0)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to run pre-processing step", err)
+			fmt.Fprintln(os.Stderr, "Failed to open work.StagingFileName", err)
 			return
 		}
-	}
+		var compressedReader *gzip.Reader
 
-	// Actual processing I guess
-	file, err = os.OpenFile(work.StagingFileName, os.O_RDONLY, 0)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to open work.StagingFileName", err)
-		return
-	}
-	var compressedReader *gzip.Reader
-
-	if compressedReader, err = gzip.NewReader(file); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to get gzip.Reader to staged file", err)
-		return
-	}
-
-	//fmt.Println("Input:", file.Name())
-	//fmt.Println("Output:", deviceWork.OutFile.Path)
-
-	//fmt.Println("Processing ...")
-	var outWriter gocommons.Writer
-	var outFile *gocommons.File
-
-	if outFile, err = gocommons.Open(deviceWork.OutFile.Path, os.O_WRONLY|os.O_APPEND, gocommons.GZ_TRUE); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to open file for writing data", err)
-		return
-	}
-	defer outFile.Close()
-
-	if outWriter, err = outFile.Writer(1048576); err != nil {
-		if n, err = io.Copy(&outWriter, compressedReader); err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to copy from staging to out", err)
+		if compressedReader, err = gzip.NewReader(file); err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to get gzip.Reader to staged file", err)
+			return
 		}
-	}
-	outWriter.Flush()
-	outWriter.Close()
 
-	_ = n
-	//fmt.Println("Updated outfile:", n)
+		//fmt.Println("Input:", file.Name())
+		//fmt.Println("Output:", deviceWork.OutFile.Path)
+
+		//fmt.Println("Processing ...")
+		var outWriter gocommons.Writer
+		var outFile *gocommons.File
+
+		if outFile, err = gocommons.Open(deviceWork.OutFile.Path, os.O_WRONLY|os.O_APPEND, gocommons.GZ_TRUE); err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to open file for writing data", err)
+			return
+		}
+		defer outFile.Close()
+
+		if outWriter, err = outFile.Writer(1048576); err != nil {
+			if n, err = io.Copy(&outWriter, compressedReader); err != nil {
+				fmt.Fprintln(os.Stderr, "Failed to copy from staging to out", err)
+			}
+		}
+		outWriter.Flush()
+		outWriter.Close()
+
+		_ = n
+		//fmt.Println("Updated outfile:", n)
+		return
+	}
+
+	if processes == nil || len(processes) == 0 {
+		processes = []ProcessingFunction{defaultProcess}
+	}
+
+	if err = ProcessStage(processes, deviceWork); err != nil {
+		return
+	}
 
 	// Now for post-processing
-	for _, process := range PostProcessing {
-		process(deviceWork)
+	//fmt.Println("Starting post-processing")
+	if err = ProcessStage(PostProcessing, deviceWork); err != nil {
+		return
 	}
+	return
 }
 
 func OpenFileAndReader(fpath string) (*gocommons.File, *bufio.Scanner, error) {

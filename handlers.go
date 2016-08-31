@@ -102,7 +102,7 @@ func MakeStagedFilesPending(config *Config) error {
 	return err
 }
 
-func DeviceWorkHandler(deviceId string, workChannel chan *Work, workFn func(work *Work), statusChannel chan string) {
+func DeviceWorkHandler(deviceId string, workChannel chan *Work, workFn func(work *Work, processes ...ProcessingFunction) error, statusChannel chan string) (err error) {
 	var work *Work
 	var ok bool
 
@@ -116,17 +116,20 @@ func DeviceWorkHandler(deviceId string, workChannel chan *Work, workFn func(work
 		//TODO: Write logic to handle the work
 		// We need to pick up files from the staging area, process them, and move the result to 'out'.
 		// We could do per-work goroutines here, but for now, we keep it simple.
-		workFn(work)
+		if err = workFn(work); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+		}
 	}
+	return
 }
 
-func PendingWorkHandler(config *Config, workFuncs ...func(work *Work)) {
+func PendingWorkHandler(config *Config, workFuncs ...func(work *Work, processes ...ProcessingFunction) error) {
 	var work *Work
 	var ok bool
 	var deviceWorkChannel chan *Work
 
 	// TODO: Currently, we only use the first function passed in
-	var workFunc func(work *Work)
+	var workFunc func(work *Work, processes ...ProcessingFunction) error
 	if workFuncs != nil && len(workFuncs) > 0 {
 		workFunc = workFuncs[0]
 	} else {
@@ -143,9 +146,10 @@ func PendingWorkHandler(config *Config, workFuncs ...func(work *Work)) {
 	wg := sync.WaitGroup{}
 	// Local function wrapping around DeviceWorkHandler to ensure that
 	// we wait for all device handlers to terminate before we return
-	dwh := func(deviceId string, deviceWorkChannel chan *Work) {
+	dwh := func(deviceId string, deviceWorkChannel chan *Work) (err error) {
 		defer wg.Done()
-		DeviceWorkHandler(deviceId, deviceWorkChannel, workFunc, nil)
+		err = DeviceWorkHandler(deviceId, deviceWorkChannel, workFunc, nil)
+		return err
 	}
 
 	// We loop indefinitely until terminated

@@ -276,7 +276,8 @@ func cleanup(directories ...string) {
 	return
 }
 
-func RunTestServerAsync(port int, config *phonelab_backend.Config, serverPtr **phonelab_backend.Server, workFuncs ...func(work *phonelab_backend.Work)) {
+func RunTestServerAsync(port int, config *phonelab_backend.Config, serverPtr **phonelab_backend.Server,
+	workFuncs ...func(work *phonelab_backend.Work, processes ...phonelab_backend.ProcessingFunction) error) {
 
 	var err error
 	defer Recover("RunTestServerAsync")

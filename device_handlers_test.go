@@ -2,6 +2,7 @@ package phonelab_backend_test
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -18,7 +19,31 @@ func TestProcessStagedWork(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
+	var err error
+
 	defer Recover("TestProcessStagedWork")
+
+	// Test for error handling
+	errFn := func(work *phonelab_backend.DeviceWork) error {
+		// Just throw an error
+		logger.Debug("Throwing error")
+		return errors.New("Expected")
+	}
+	dummyWork := &phonelab_backend.Work{}
+	phonelab_backend.PreProcessing = append(phonelab_backend.PreProcessing, errFn)
+	err = phonelab_backend.ProcessStagedWork(dummyWork)
+	assert.NotNil(err, "Pre-processing error not properly handled")
+	phonelab_backend.PreProcessing = phonelab_backend.PreProcessing[:0]
+
+	// Now test post-processing error handling
+	// We create a dummy core process and feed this into ProcessStagedWork
+	dummyCoreProcess := func(work *phonelab_backend.DeviceWork) (err error) {
+		return
+	}
+	phonelab_backend.PostProcessing = append(phonelab_backend.PostProcessing, errFn)
+	err = phonelab_backend.ProcessStagedWork(dummyWork, dummyCoreProcess)
+	assert.NotNil(err, "Post-processing error not properly handled")
+	phonelab_backend.PostProcessing = phonelab_backend.PostProcessing[:0]
 
 	var port int = 11929
 	var server *phonelab_backend.Server
@@ -53,8 +78,8 @@ func TestProcessStagedWork(t *testing.T) {
 		mutex.Unlock()
 		return
 	}
-	customWorkFn := func(w *phonelab_backend.Work) {
-		phonelab_backend.ProcessStagedWork(w)
+	customWorkFn := func(w *phonelab_backend.Work, processes ...phonelab_backend.ProcessingFunction) error {
+		return phonelab_backend.ProcessStagedWork(w)
 	}
 
 	phonelab_backend.PreProcessing = append(phonelab_backend.PreProcessing, preProcess)

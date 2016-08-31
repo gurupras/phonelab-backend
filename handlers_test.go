@@ -30,8 +30,9 @@ func TestDeviceWorkHandler(t *testing.T) {
 	channel = make(chan *phonelab_backend.Work)
 
 	count := 0
-	countFn := func(work *phonelab_backend.Work) {
+	countFn := func(work *phonelab_backend.Work, processes ...phonelab_backend.ProcessingFunction) (err error) {
 		count++
+		return
 	}
 
 	go phonelab_backend.DeviceWorkHandler("dummy", channel, countFn, statusChannel)
@@ -75,10 +76,11 @@ func TestPendingWorkHandler(t *testing.T) {
 	started := 0
 	verified := 0
 	mutex := sync.Mutex{}
-	countFn := func(work *phonelab_backend.Work) {
+	countFn := func(work *phonelab_backend.Work, processes ...phonelab_backend.ProcessingFunction) (err error) {
 		mutex.Lock()
 		verified++
 		mutex.Unlock()
+		return
 	}
 
 	config.WorkChannel = make(chan *phonelab_backend.Work, 1000)
@@ -211,8 +213,9 @@ func TestMakeStagedFilesPending(t *testing.T) {
 
 		totalFiles := 0
 
-		workFn := func(work *phonelab_backend.Work) {
+		workFn := func(work *phonelab_backend.Work, processes ...phonelab_backend.ProcessingFunction) (err error) {
 			totalFiles++
+			return
 		}
 
 		serverWg := sync.WaitGroup{}
@@ -237,7 +240,7 @@ func TestMakeStagedFilesPending(t *testing.T) {
 		wg := new(sync.WaitGroup)
 
 		var verified int = 0
-		countFn := func(work *phonelab_backend.Work) {
+		countFn := func(work *phonelab_backend.Work, processes ...phonelab_backend.ProcessingFunction) (err error) {
 			mutex.Lock()
 			verified++
 			logger.Debug(fmt.Sprintf("%d - %d/%d", idx, verified, totalFiles))
@@ -245,6 +248,7 @@ func TestMakeStagedFilesPending(t *testing.T) {
 				config.CloseWorkChannel()
 			}
 			mutex.Unlock()
+			return
 		}
 
 		wg.Add(1)

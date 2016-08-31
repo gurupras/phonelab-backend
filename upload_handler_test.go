@@ -17,9 +17,10 @@ func TestUpload(t *testing.T) {
 
 	phonelab_backend.InitializeProcessingSteps()
 
-	workFn := func(work *phonelab_backend.Work) {
+	workFn := func(work *phonelab_backend.Work, processes ...phonelab_backend.ProcessingFunction) (err error) {
 		// Dummy work function. We're only testing whether server
 		// correctly receives upload and stages it
+		return
 	}
 	config := new(phonelab_backend.Config)
 
@@ -41,8 +42,9 @@ func TestLoadCapability(t *testing.T) {
 
 	phonelab_backend.InitializeProcessingSteps()
 
-	workChannel := make(chan *phonelab_backend.Work, 1000)
-	go RunTestServerAsync(8084, "", "", workChannel, &server)
+	config := new(phonelab_backend.Config)
+	config.WorkChannel = make(chan *phonelab_backend.Work, 1000)
+	go RunTestServerAsync(8084, config, &server)
 
 	devices := LoadDevicesFromFile("deviceids.txt", assert)
 
@@ -124,8 +126,9 @@ func TestAddStagingMetadata(t *testing.T) {
 
 	phonelab_backend.InitializeStagingProcessingSteps()
 
-	workFn := func(work *phonelab_backend.Work) {
+	workFn := func(work *phonelab_backend.Work, processes ...phonelab_backend.ProcessingFunction) (err error) {
 		// Do nothing. We're only testing adding staging metadata
+		return
 	}
 
 	go RunTestServerAsync(port, config, &server, workFn)
