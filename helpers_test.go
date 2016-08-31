@@ -132,7 +132,7 @@ func DeviceDataGenerator(deviceId string, port int, commChannel chan interface{}
 	// Start the data generator
 	go DataGenerator(logChannel, dataQuitChannel)
 
-	baseUrl := fmt.Sprintf("http://dirtydeeds.cse.buffalo.edu:%d/uploader", port)
+	baseUrl := fmt.Sprintf("http://localhost:%d/uploader", port)
 	version := "2.0.1"
 	packageName := "edu.buffalo.cse.phonelab.conductor.tasks.LogcatTask"
 	fileName := "log.out"
