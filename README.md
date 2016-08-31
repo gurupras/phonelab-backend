@@ -1,3 +1,6 @@
+[![Build Status](https://travis-ci.org/gurupras/phonelab_backend.svg?branch=master)](https://travis-ci.org/gurupras/phonelab_backend) 
+[![Codecov branch](https://img.shields.io/codecov/c/github/gurupras/phonelab_backend/master.svg?maxAge=2592000?style=plastic)]()
+
 # phonelab-backend
 Phonelab's backend log processing written in Golang
 
