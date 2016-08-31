@@ -331,6 +331,8 @@ func TestMain(m *testing.M) {
 		gocommons.Makedirs(testDirBase)
 	}
 
+	fmt.Println("testDirBase:", testDirBase)
+
 	code := m.Run()
 	os.Exit(code)
 }
