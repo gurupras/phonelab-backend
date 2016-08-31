@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/google/shlex"
 	"github.com/gurupras/gocommons"
 	"github.com/gurupras/phonelab_backend"
@@ -25,6 +26,7 @@ import (
 )
 
 var (
+	logger           *logrus.Logger
 	testDirBase      string = os.Getenv("TEST_DIR_BASE")
 	stagingDirGlobal string
 	outDirGlobal     string
@@ -37,7 +39,7 @@ const (
 
 func Recover(name string) {
 	if r := recover(); r != nil {
-		fmt.Fprintln(os.Stderr, fmt.Sprintf("%s: FAILED\n%s\n%s\n", name, r, debug.Stack()))
+		logger.Error(fmt.Sprintf("%s: FAILED\n%s\n%s\n", name, r, debug.Stack()))
 	}
 }
 
@@ -91,7 +93,7 @@ func LoadDevicesFromFile(filePath string, assert *assert.Assertions) []string {
 	fstruct, err := gocommons.Open(filePath, os.O_RDONLY, gocommons.GZ_UNKNOWN)
 	assert.Nil(err, "Failed to open file:", filePath, err)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to open file:", filePath)
+		logger.Error("Failed to open file:", filePath)
 		return nil
 	}
 
@@ -135,15 +137,21 @@ func DeviceDataGenerator(deviceId string, port int, commChannel chan interface{}
 	baseUrl := fmt.Sprintf("http://localhost:%d/uploader", port)
 	version := "2.0.1"
 	packageName := "edu.buffalo.cse.phonelab.conductor.tasks.LogcatTask"
-	fileName := "log.out"
+	fileName := "logger.out"
 	url := fmt.Sprintf("%s/%s/%s/%s/%s", baseUrl, version, deviceId, packageName, fileName)
-	//fmt.Println("URL:", url)
+	logger.Debug("URL:", url)
 	// Now collect lines, package them into 'files'
 	// and ship them via POST
 
 	wg := new(sync.WaitGroup)
 
 	for {
+		logger.Debug("Waiting for data request:", deviceId)
+		if _, ok := <-dataRequestChannel; !ok {
+			dataQuitChannel <- struct{}{}
+			break
+		}
+
 		file := new(bytes.Buffer)
 		//var fileWriter io.Writer
 		//fileWriter = file
@@ -181,28 +189,22 @@ func DeviceDataGenerator(deviceId string, port int, commChannel chan interface{}
 
 			if err != nil {
 				if resp != nil {
-					fmt.Fprintln(os.Stderr, fmt.Sprintf("Failed with status:%v-%v", resp.StatusCode, resp.Status))
+					logger.Error(fmt.Sprintf("Failed with status:%v-%v", resp.StatusCode, resp.Status))
 					return
 				} else {
-					fmt.Fprintln(os.Stderr, "Response is nil")
+					logger.Error("Response is nil")
 					return
 				}
 			}
 			if resp.StatusCode != 200 {
-				fmt.Fprintln(os.Stderr, "Error while doing POST")
+				logger.Error("Error while doing POST")
 			}
 
-			fmt.Println(fmt.Sprintf("%s: Sent file of size: %d bytes", deviceId, currentSize))
+			logger.Debug(fmt.Sprintf("%s: Sent file of size: %d bytes", deviceId, currentSize))
 			commChannel <- DONE
-		}
-		if _, ok := <-dataRequestChannel; ok {
-			dataQuitChannel <- struct{}{}
-		} else {
-			break
 		}
 		wg.Add(1)
 		go handlePayload(file, currentSize)
-		//fmt.Println(resp)
 
 	}
 	wg.Wait()
@@ -213,54 +215,46 @@ func UploadFiles(port int, nDevices, filesPerDevice int, assert *assert.Assertio
 	devices := LoadDevicesFromFile("deviceids.txt", assert)
 
 	wg := sync.WaitGroup{}
+	deviceWorker := func(deviceId string) {
+		dataRequestChannel := make(chan interface{})
+		commChannel := make(chan interface{})
+
+		go func() {
+			for filesUploaded := 0; filesUploaded < filesPerDevice; filesUploaded++ {
+				dataRequestChannel <- struct{}{}
+				logger.Debug(fmt.Sprintf("%s - Requested: %d", deviceId, filesUploaded+1))
+			}
+		}()
+		go func() {
+			filesUploaded := 0
+			for filesUploaded < filesPerDevice {
+				if data, ok := <-commChannel; !ok {
+					assert.Fail("Unexpected failure")
+				} else {
+					if data == DONE {
+						filesUploaded++
+						logger.Debug("Files uploaded:", filesUploaded)
+					}
+				}
+			}
+			close(dataRequestChannel)
+			logger.Debug("Stopping DeviceDataGenerator")
+		}()
+		DeviceDataGenerator(deviceId, port, commChannel, dataRequestChannel, &wg)
+	}
 	for i := 0; i < nDevices; i++ {
 		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			dataRequestChannel := make(chan interface{})
-			commChannel := make(chan interface{})
-
-			go func() {
-				for filesUploaded := 0; filesUploaded < filesPerDevice; filesUploaded++ {
-					dataRequestChannel <- struct{}{}
-				}
-			}()
-			go func() {
-				filesUploaded := 0
-				for filesUploaded < filesPerDevice {
-					if data, ok := <-commChannel; !ok {
-						assert.Fail("Unexpected failure")
-					} else {
-						if data == DONE {
-							filesUploaded++
-						}
-					}
-					//fmt.Println("Files uploaded:", filesUploaded)
-				}
-				close(dataRequestChannel)
-				//fmt.Println("Stopping DeviceDataGenerator")
-			}()
-
-			localWg := sync.WaitGroup{}
-			localWg.Add(1)
-			go func() {
-				DeviceDataGenerator(devices[i], port, commChannel, dataRequestChannel, &wg)
-			}()
-			// We stop after filesPerDevice uploads
-			//fmt.Println("Waiting for localWg")
-			localWg.Wait()
-			//fmt.Println("localWg done")
-		}()
+		go deviceWorker(devices[i])
 	}
-	//fmt.Println("Waiting for wg")
+	logger.Debug("Waiting for wg")
 	wg.Wait()
-	//fmt.Println("wg done")
-	//fmt.Println("Uploaded:", nDevices*filesPerDevice)
+	logger.Debug("wg done")
+	logger.Debug("Uploaded:", nDevices*filesPerDevice)
 }
 
 func cleanup(directories ...string) {
 	// We need to clean up
-	//fmt.Println("Cleaning up")
+	logger.Debug("Cleaning up")
 	var directoriesToDelete []string
 	if directories == nil || len(directories) == 0 {
 		directoriesToDelete = []string{stagingDirGlobal, outDirGlobal}
@@ -271,11 +265,11 @@ func cleanup(directories ...string) {
 	for _, dir := range directoriesToDelete {
 		cmdline := fmt.Sprintf("rm -rf %v", dir)
 		if args, err := shlex.Split(cmdline); err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to split:", cmdline)
+			logger.Error("Failed to split:", cmdline)
 		} else {
 			if ret, stdout, stderr := gocommons.Execv(args[0], args[1:], true); ret != 0 {
-				fmt.Fprintln(os.Stderr, stdout)
-				fmt.Fprintln(os.Stderr, stderr)
+				logger.Error(stdout)
+				logger.Error(stderr)
 			}
 		}
 	}
@@ -294,14 +288,14 @@ func RunTestServerAsync(port int, config *phonelab_backend.Config, serverPtr **p
 
 	if strings.Compare(config.StagingDir, "") == 0 {
 		if config.StagingDir, err = ioutil.TempDir(testDirBase, "staging-"); err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to create staging dir")
+			logger.Error("Failed to create staging dir")
 			os.Exit(-1)
 		}
 	}
 
 	if strings.Compare(config.OutDir, "") == 0 {
 		if config.OutDir, err = ioutil.TempDir(testDirBase, "outdir-"); err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to create outdir")
+			logger.Error("Failed to create outdir")
 			os.Exit(-1)
 		}
 	}
@@ -311,7 +305,7 @@ func RunTestServerAsync(port int, config *phonelab_backend.Config, serverPtr **p
 
 	// FIXME: Port should probably be part of command line arguments
 	// or a config file. Currently, this is hard-coded.
-	//fmt.Println("Starting server ...")
+	logger.Debug("Starting server ...")
 
 	// XXX: Should pending work handler be included here?
 	// If not, we would have to include it in every place that
@@ -326,12 +320,12 @@ func RunTestServerAsync(port int, config *phonelab_backend.Config, serverPtr **p
 	if err != nil {
 		panic(err)
 	}
-	//fmt.Println("Running server on port:", port)
+	logger.Debug("Running server on port:", port)
 	phonelab_backend.RunServer(*serverPtr)
-	fmt.Println("Attempting to close work channel")
+	logger.Debug("Attempting to close work channel")
 	config.CloseWorkChannel()
 	pendingWorkHandlerWg.Wait()
-	fmt.Println("Closed server")
+	logger.Debug("Closed server")
 }
 
 func TestDeviceDataGeneratorCompression(t *testing.T) {
@@ -365,7 +359,7 @@ func TestDeviceDataGeneratorCompression(t *testing.T) {
 			reader.Split(bufio.ScanLines)
 			for reader.Scan() {
 				line := reader.Text()
-				fmt.Println(line)
+				logger.Debug(line)
 			}
 		}
 
@@ -393,6 +387,9 @@ func TestDeviceDataGeneratorCompression(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
+	logger = logrus.New()
+	logger.Level = logrus.InfoLevel
+
 	if strings.Compare(testDirBase, "") == 0 {
 		testDirBase = "/tmp"
 	}
@@ -400,7 +397,7 @@ func TestMain(m *testing.M) {
 		gocommons.Makedirs(testDirBase)
 	}
 
-	fmt.Println("testDirBase:", testDirBase)
+	logger.Debug("testDirBase:", testDirBase)
 
 	code := m.Run()
 	os.Exit(code)

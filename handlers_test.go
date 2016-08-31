@@ -94,7 +94,7 @@ func TestPendingWorkHandler(t *testing.T) {
 	wg = new(sync.WaitGroup)
 	startedMutex := sync.Mutex{}
 	workProducer := func(deviceId string, stopChannel chan interface{}) {
-		//fmt.Println("workProducer:", deviceId)
+		logger.Debug("workProducer:", deviceId)
 		defer wg.Done()
 		stop := false
 
@@ -142,7 +142,7 @@ func TestPendingWorkHandler(t *testing.T) {
 	// Close the PendingWorkChannel to trigger stopping of consumers
 	mutex.Lock()
 	close(config.WorkChannel)
-	//fmt.Println("Closed workChannel")
+	logger.Debug("Closed workChannel")
 	mutex.Unlock()
 
 	// Wait for PendingWorkHandler to return signalling that all consumers
@@ -224,12 +224,12 @@ func TestMakeStagedFilesPending(t *testing.T) {
 		UploadFiles(port, nDevices, nFilesPerDevice, assert)
 
 		// Now close server
-		fmt.Println("Waiting for server to stop")
+		logger.Debug("Waiting for server to stop")
 		server.Stop()
 		serverWg.Wait()
-		fmt.Println("Server stopped")
+		logger.Debug("Server stopped")
 		config.WorkChannel = nil
-		fmt.Println("Set work channel to nil")
+		logger.Debug("Set work channel to nil")
 
 		// By now all the device handlers should have staged the files
 		config.WorkChannel = make(chan *phonelab_backend.Work, 1000)
@@ -240,7 +240,7 @@ func TestMakeStagedFilesPending(t *testing.T) {
 		countFn := func(work *phonelab_backend.Work) {
 			mutex.Lock()
 			verified++
-			//fmt.Println(fmt.Sprintf("%d - %d/%d", idx, verified, totalFiles))
+			logger.Debug(fmt.Sprintf("%d - %d/%d", idx, verified, totalFiles))
 			if verified == totalFiles {
 				config.CloseWorkChannel()
 			}

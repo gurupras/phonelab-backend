@@ -8,9 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-/*
 func TestUpload(t *testing.T) {
-	//t.Parallel()
+	t.Parallel()
 	var server *phonelab_backend.Server
 	assert := assert.New(t)
 
@@ -22,17 +21,19 @@ func TestUpload(t *testing.T) {
 		// Dummy work function. We're only testing whether server
 		// correctly receives upload and stages it
 	}
-	workChannel := make(chan *phonelab_backend.Work, 1000)
-	go RunTestServerAsync(8083, "", "", workChannel, &server, workFn)
+	config := new(phonelab_backend.Config)
 
-	UploadFiles(8083, 1, 1, assert)
+	config.WorkChannel = make(chan *phonelab_backend.Work, 1000)
+	go RunTestServerAsync(8083, config, &server, workFn)
+
+	UploadFiles(8083, 3, 5, assert)
 	server.Stop()
 	cleanup()
 }
-*/
+
 /*
 func TestLoadCapability(t *testing.T) {
-	//t.Parallel()
+	t.Parallel()
 	var server *phonelab_backend.Server
 	assert := assert.New(t)
 
@@ -59,7 +60,7 @@ func TestLoadCapability(t *testing.T) {
 		go func() {
 			for {
 				time.Sleep(1 * time.Second)
-				fmt.Println("TLC: Pending uploads:", pending)
+				logger.Debug("TLC: Pending uploads:", pending)
 			}
 		}()
 
@@ -74,7 +75,7 @@ func TestLoadCapability(t *testing.T) {
 				case DONE:
 					pending--
 				default:
-					fmt.Fprintln(os.Stderr, "What is this? %v", state)
+					logger.Error("What is this? %v", state)
 				}
 			}
 		}
@@ -92,13 +93,13 @@ func TestLoadCapability(t *testing.T) {
 
 	time.Sleep(10 * time.Second)
 
-	fmt.Println("Terminating ...")
+	logger.Debug("Terminating ...")
 	for _, channel := range channels {
 		channel <- struct{}{}
 	}
 	wg.Wait()
 
-	fmt.Println("Stopping server ...")
+	logger.Debug("Stopping server ...")
 	//TODO: Server stop logic
 	server.Stop()
 	//cleanup()
@@ -106,7 +107,7 @@ func TestLoadCapability(t *testing.T) {
 */
 
 func TestAddStagingMetadata(t *testing.T) {
-	//t.Parallel()
+	t.Parallel()
 	assert := assert.New(t)
 
 	defer Recover("TestAddStagingMetadata")

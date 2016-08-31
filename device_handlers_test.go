@@ -36,7 +36,7 @@ func TestProcessStagedWork(t *testing.T) {
 	mutex := sync.Mutex{}
 
 	preProcess := func(w *phonelab_backend.DeviceWork) (err error) {
-		//fmt.Println("preProcess")
+		logger.Debug("preProcess")
 		mutex.Lock()
 		started++
 		mutex.Unlock()
@@ -45,7 +45,7 @@ func TestProcessStagedWork(t *testing.T) {
 	postProcess := func(w *phonelab_backend.DeviceWork) (err error) {
 		mutex.Lock()
 		verified++
-		//fmt.Println("Verified:", verified)
+		logger.Debug("Verified:", verified)
 		if verified == totalFiles {
 			wg.Done()
 		}
@@ -159,7 +159,7 @@ func TestReadFileInReverse(t *testing.T) {
 	for i := 0; i < nLines; i++ {
 		lineArray = append(lineArray, fmt.Sprintf("Hello World-%d", i))
 	}
-	//fmt.Println(lineArray)
+	logger.Debug(lineArray)
 	writer.Write([]byte(strings.Join(lineArray, "\n")))
 	writer.Flush()
 	writer.Close()
