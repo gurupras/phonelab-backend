@@ -117,8 +117,8 @@ func DeviceDataGenerator(deviceId string, port int, commChannel chan interface{}
 	defer waitGroup.Done()
 
 	var (
-		MIN_REQ_SIZE int = 102 * 8
-		MAX_REQ_SIZE int = 1024
+		MIN_REQ_SIZE int = 102400 * 8
+		MAX_REQ_SIZE int = 1024000
 	)
 
 	// Generators always close channels
