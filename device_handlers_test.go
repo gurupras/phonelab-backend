@@ -45,7 +45,7 @@ func TestProcessStagedWork(t *testing.T) {
 
 	// Now test post-processing error handling
 	// We create a dummy core process and feed this into ProcessStagedWork
-	dummyCoreProcess := func(work *phonelab_backend.DeviceWork) (err error) {
+	dummyCoreProcess = func(work *phonelab_backend.DeviceWork) (err error) {
 		return
 	}
 	phonelab_backend.PostProcessing = append(phonelab_backend.PostProcessing, errFn)
