@@ -46,9 +46,13 @@ func DataGenerator(channel chan string, stop chan interface{}) {
 
 	defer close(channel)
 
+	stopMutex := sync.Mutex{}
+
 	// Start a goroutine to listen for stop
 	go func() {
 		_ = <-stop
+		stopMutex.Lock()
+		defer stopMutex.Unlock()
 		shouldStop = true
 	}()
 
@@ -64,6 +68,7 @@ func DataGenerator(channel chan string, stop chan interface{}) {
 
 	reset()
 	for {
+		stopMutex.Lock()
 		if shouldStop {
 			break
 		}
@@ -76,6 +81,7 @@ func DataGenerator(channel chan string, stop chan interface{}) {
 		line := GenerateRandomLogline(bootId, now, logcatToken)
 		channel <- line
 		logcatToken++
+		stopMutex.Unlock()
 	}
 }
 
@@ -107,29 +113,21 @@ func LoadDevicesFromFile(filePath string, assert *assert.Assertions) []string {
 // Generates data and and sends it to the server via POST requests
 // Each request is of random length between MIN_REQ_SIZE and MAX_REQ_SIZE
 // Continues until it receives data on the quitChannel
-func DeviceDataGenerator(deviceId string, port int, commChannel chan interface{}, quitChannel chan interface{}, waitGroup *sync.WaitGroup) {
+func DeviceDataGenerator(deviceId string, port int, commChannel chan interface{}, dataRequestChannel chan interface{}, waitGroup *sync.WaitGroup) {
 	defer waitGroup.Done()
 
 	var (
-		MIN_REQ_SIZE int = 102400 * 8
-		MAX_REQ_SIZE int = 1024000
+		MIN_REQ_SIZE int = 102 * 8
+		MAX_REQ_SIZE int = 1024
 	)
 
 	// Generators always close channels
 	logChannel := make(chan string, 10000)
 
-	stop := false
-
 	dataQuitChannel := make(chan interface{})
 	defer close(dataQuitChannel)
 
 	stopMutex := new(sync.Mutex)
-	go func() {
-		dataQuitChannel <- <-quitChannel
-		stopMutex.Lock()
-		defer stopMutex.Unlock()
-		stop = true
-	}()
 
 	// Start the data generator
 	go DataGenerator(logChannel, dataQuitChannel)
@@ -146,19 +144,16 @@ func DeviceDataGenerator(deviceId string, port int, commChannel chan interface{}
 	wg := new(sync.WaitGroup)
 
 	for {
-		if stop {
-			break
-		}
 		file := new(bytes.Buffer)
+		//var fileWriter io.Writer
+		//fileWriter = file
+
 		fileWriter := gzip.NewWriter(file)
 		// Next file size. [MIN_REQ_SIZE, MAX_REQ_SIZE]
 		randomSize := MIN_REQ_SIZE + rand.Intn(MAX_REQ_SIZE-MIN_REQ_SIZE+1)
 		currentSize := 0
 
 		for currentSize < randomSize {
-			if stop {
-				break
-			}
 			line := <-logChannel
 
 			fileWriter.Write([]byte(line))
@@ -171,20 +166,14 @@ func DeviceDataGenerator(deviceId string, port int, commChannel chan interface{}
 			defer wg.Done()
 			stopMutex.Lock()
 			defer stopMutex.Unlock()
-			if stop {
-				return
-			}
 
 			commChannel <- PENDING
 			// Send back any data you want to
 			resp, body, err := gorequest.New().Post(url).
 				Set("Content-Length", fmt.Sprintf("%v", len(file.String()))).
-				Set("Accept-Encoding", "gzip").
-				Set("Content-Encoding", "gzip").
-				Set("Content-Type", "multipart/form-data").
+				Set("Content-Type", "application/x-www-form-urlencoded").
 				Send(file.String()).
 				End()
-			commChannel <- DONE
 
 			if resp.StatusCode != 200 {
 				panic("Error while doing POST")
@@ -201,14 +190,70 @@ func DeviceDataGenerator(deviceId string, port int, commChannel chan interface{}
 					fmt.Fprintln(os.Stderr, "Response is nil")
 				}
 			}
+			fmt.Println(fmt.Sprintf("%s: Sent file of size: %d bytes", deviceId, currentSize))
+			commChannel <- DONE
+		}
+		if _, ok := <-dataRequestChannel; ok {
+			dataQuitChannel <- struct{}{}
+		} else {
+			break
 		}
 		wg.Add(1)
 		go handlePayload(file, currentSize)
 		//fmt.Println(resp)
 
-		//fmt.Println(fmt.Sprintf("%s: Sent file of size: %d bytes", deviceId, currentSize))
 	}
 	wg.Wait()
+}
+
+// Expects server to be started
+func UploadFiles(port int, nDevices, filesPerDevice int, assert *assert.Assertions) {
+	devices := LoadDevicesFromFile("deviceids.txt", assert)
+
+	wg := sync.WaitGroup{}
+	for i := 0; i < nDevices; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			dataRequestChannel := make(chan interface{})
+			commChannel := make(chan interface{})
+
+			go func() {
+				for filesUploaded := 0; filesUploaded < filesPerDevice; filesUploaded++ {
+					dataRequestChannel <- struct{}{}
+				}
+			}()
+			go func() {
+				filesUploaded := 0
+				for filesUploaded < filesPerDevice {
+					if data, ok := <-commChannel; !ok {
+						assert.Fail("Unexpected failure")
+					} else {
+						if data == DONE {
+							filesUploaded++
+						}
+					}
+					//fmt.Println("Files uploaded:", filesUploaded)
+				}
+				close(dataRequestChannel)
+				//fmt.Println("Stopping DeviceDataGenerator")
+			}()
+
+			localWg := sync.WaitGroup{}
+			localWg.Add(1)
+			go func() {
+				DeviceDataGenerator(devices[i], port, commChannel, dataRequestChannel, &wg)
+			}()
+			// We stop after filesPerDevice uploads
+			//fmt.Println("Waiting for localWg")
+			localWg.Wait()
+			//fmt.Println("localWg done")
+		}()
+	}
+	//fmt.Println("Waiting for wg")
+	wg.Wait()
+	//fmt.Println("wg done")
+	//fmt.Println("Uploaded:", nDevices*filesPerDevice)
 }
 
 func cleanup(directories ...string) {
@@ -287,44 +332,6 @@ func RunTestServerAsync(port int, config *phonelab_backend.Config, serverPtr **p
 	fmt.Println("Closed server")
 }
 
-// Expects server to be started
-func UploadFiles(port int, nDevices, filesPerDevice int, assert *assert.Assertions) {
-	devices := LoadDevicesFromFile("deviceids.txt", assert)
-
-	wg := sync.WaitGroup{}
-	for i := 0; i < nDevices; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			stopChannel := make(chan interface{})
-			commChannel := make(chan interface{})
-			defer close(commChannel)
-
-			localWg := sync.WaitGroup{}
-			localWg.Add(1)
-			go func() {
-				defer localWg.Done()
-				// Dummy consumer for commChannel
-				for {
-					if _, ok := <-commChannel; !ok {
-						break
-					}
-				}
-			}()
-
-			go DeviceDataGenerator(devices[i], port, commChannel, stopChannel, &wg)
-			// We stop after filesPerDevice uploads
-			for filesUploaded := 0; filesUploaded < filesPerDevice; filesUploaded++ {
-				_ = <-commChannel
-			}
-			stopChannel <- struct{}{}
-			localWg.Wait()
-		}()
-	}
-	wg.Wait()
-	//fmt.Println("Uploaded:", nDevices*filesPerDevice)
-}
-
 func TestDeviceDataGeneratorCompression(t *testing.T) {
 	// We test whether the data generated by DeviceDataGenerator is compressed
 	// Setup a server with custom upload handler
@@ -349,13 +356,23 @@ func TestDeviceDataGeneratorCompression(t *testing.T) {
 		var compressedReader *gzip.Reader
 		var err error
 
-		if compressedReader, err = gzip.NewReader(body); err != nil {
-			assert.Fail("Body is not compressed:", err)
+		compressedReader, err = gzip.NewReader(body)
+		if err != nil {
+			assert.Nil(err, "Body is not compressed:", err.Error())
+			reader := bufio.NewScanner(body)
+			reader.Split(bufio.ScanLines)
+			for reader.Scan() {
+				line := reader.Text()
+				fmt.Println(line)
+			}
 		}
 
 		_ = compressedReader
 
-		return c.String(200, "OK")
+		err = c.String(200, "OK")
+		// We've responded. Now shut down the server
+		server.Stop()
+		return err
 	}
 
 	serverWg := sync.WaitGroup{}
@@ -370,7 +387,6 @@ func TestDeviceDataGeneratorCompression(t *testing.T) {
 		server.Run()
 	}()
 	UploadFiles(port, 1, 1, assert)
-	server.Stop()
 	serverWg.Wait()
 }
 
