@@ -96,7 +96,7 @@ func TestOpenFileAndReader(t *testing.T) {
 	assert.NotNil(err, "No error on non-existent file")
 
 	// Fail to read write-only file
-	f, err := ioutil.TempFile("/tmp", "wronly-")
+	f, err := ioutil.TempFile(testDirBase, "wronly-")
 	assert.Nil(err, "Failed to create temporary write-only file")
 	f.Chmod(0222)
 	fstruct, reader, err = phonelab_backend.OpenFileAndReader(f.Name())
@@ -193,8 +193,8 @@ func TestReadFileInReverse(t *testing.T) {
 func TestAddOutMetadata(t *testing.T) {
 	assert := assert.New(t)
 
-	phonelab_backend.StagingDirBase = "/tmp/test-add-metadata/stage"
-	phonelab_backend.OutDirBase = "/tmp/test-add-metadata/out"
+	phonelab_backend.StagingDirBase = filepath.Join(testDirBase, "test-add-metadata/stage")
+	phonelab_backend.OutDirBase = filepath.Join(testDirBase, "test-add-metadata/out")
 
 	port := 31121
 	var server *phonelab_backend.Server

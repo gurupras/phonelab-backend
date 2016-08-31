@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/rand"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -57,7 +58,7 @@ func TestPendingWorkHandler(t *testing.T) {
 
 	config := new(phonelab_backend.Config)
 	config.WorkChannel = make(chan *phonelab_backend.Work, 1000)
-	config.StagingDir, err = ioutil.TempDir("/tmp", "staging-")
+	config.StagingDir, err = ioutil.TempDir(testDirBase, "staging-")
 	assert.Nil(err, "Failed to create staging dir")
 
 	wg := new(sync.WaitGroup)
@@ -161,8 +162,8 @@ func TestMakeStagedFilesPending(t *testing.T) {
 
 	phonelab_backend.InitializeStagingProcessingSteps()
 
-	stagingDirBase := "/tmp/staging-makestagedfilespending"
-	outDirBase := "/tmp/out-makestagedfilespending"
+	stagingDirBase := filepath.Join(testDirBase, "staging-makestagedfilespending")
+	outDirBase := filepath.Join(testDirBase, "out-makestagedfilespending")
 
 	// First, finish the negative cases
 	config := new(phonelab_backend.Config)

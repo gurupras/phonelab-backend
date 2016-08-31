@@ -11,6 +11,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+	"testing"
 	"time"
 
 	"github.com/google/shlex"
@@ -22,6 +23,7 @@ import (
 )
 
 var (
+	testDirBase      string = os.Getenv("TEST_DIR_BASE")
 	stagingDirGlobal string
 	outDirGlobal     string
 )
@@ -242,14 +244,14 @@ func RunTestServerAsync(port int, config *phonelab_backend.Config, serverPtr **p
 	}
 
 	if strings.Compare(config.StagingDir, "") == 0 {
-		if config.StagingDir, err = ioutil.TempDir("/tmp", "staging-"); err != nil {
+		if config.StagingDir, err = ioutil.TempDir(testDirBase, "staging-"); err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to create staging dir")
 			os.Exit(-1)
 		}
 	}
 
 	if strings.Compare(config.OutDir, "") == 0 {
-		if config.OutDir, err = ioutil.TempDir("/tmp", "outdir-"); err != nil {
+		if config.OutDir, err = ioutil.TempDir(testDirBase, "outdir-"); err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to create outdir")
 			os.Exit(-1)
 		}
@@ -319,4 +321,16 @@ func UploadFiles(port int, nDevices, filesPerDevice int, assert *assert.Assertio
 	}
 	wg.Wait()
 	//fmt.Println("Uploaded:", nDevices*filesPerDevice)
+}
+
+func TestMain(m *testing.M) {
+	if strings.Compare(testDirBase, "") == 0 {
+		testDirBase = "/tmp"
+	}
+	if exists, err := gocommons.Exists(testDirBase); err != nil || !exists {
+		gocommons.Makedirs(testDirBase)
+	}
+
+	code := m.Run()
+	os.Exit(code)
 }

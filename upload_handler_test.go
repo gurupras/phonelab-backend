@@ -1,6 +1,7 @@
 package phonelab_backend_test
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/gurupras/phonelab_backend"
@@ -110,8 +111,8 @@ func TestAddStagingMetadata(t *testing.T) {
 
 	defer Recover("TestAddStagingMetadata")
 
-	stagingDirBase := "/tmp/staging-test-add-metadata/"
-	outDirBase := "/tmp/out-test-add-metadata/"
+	stagingDirBase := filepath.Join(testDirBase, "staging-test-add-metadata/")
+	outDirBase := filepath.Join(testDirBase, "out-test-add-metadata/")
 
 	port := 31121
 	var server *phonelab_backend.Server
