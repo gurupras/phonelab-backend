@@ -21,6 +21,8 @@ func generateFakeWork() *phonelab_backend.Work {
 }
 
 func TestWorkToStagingMetadata(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	defer Recover("TestWorkToStagingMetadata")
@@ -38,6 +40,8 @@ func TestWorkToStagingMetadata(t *testing.T) {
 }
 
 func TestGenerateStagingMetadata(t *testing.T) {
+	t.Parallel()
+
 	var metadata []byte
 
 	assert := assert.New(t)
@@ -50,6 +54,8 @@ func TestGenerateStagingMetadata(t *testing.T) {
 }
 
 func TestWriteStagingMetadata(t *testing.T) {
+	t.Parallel()
+
 	var err error
 	var work *phonelab_backend.Work
 	var buf bytes.Buffer

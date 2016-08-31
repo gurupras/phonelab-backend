@@ -10,11 +10,12 @@ import (
 
 	"github.com/gurupras/gocommons"
 	"github.com/gurupras/phonelab_backend"
+	"github.com/labstack/gommon/log"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestProcessStagedWork(t *testing.T) {
-	//t.Parallel()
+	t.Parallel()
 	assert := assert.New(t)
 
 	defer Recover("TestProcessStagedWork")
@@ -36,7 +37,7 @@ func TestProcessStagedWork(t *testing.T) {
 	mutex := sync.Mutex{}
 
 	preProcess := func(w *phonelab_backend.DeviceWork) (err error) {
-		logger.Debug("preProcess")
+		log.Debug("preProcess")
 		mutex.Lock()
 		started++
 		mutex.Unlock()
@@ -45,7 +46,7 @@ func TestProcessStagedWork(t *testing.T) {
 	postProcess := func(w *phonelab_backend.DeviceWork) (err error) {
 		mutex.Lock()
 		verified++
-		logger.Debug("Verified:", verified)
+		log.Debug("Verified:", verified)
 		if verified == totalFiles {
 			wg.Done()
 		}
@@ -80,7 +81,7 @@ func TestProcessStagedWork(t *testing.T) {
 }
 
 func TestOpenFileAndReader(t *testing.T) {
-	//t.Parallel()
+	t.Parallel()
 	assert := assert.New(t)
 
 	defer Recover("TestOpenFileAndReader")
@@ -118,6 +119,8 @@ func TestOpenFileAndReader(t *testing.T) {
 
 /*
 func TestReadFileInReverse(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	port := 21331
@@ -159,7 +162,7 @@ func TestReadFileInReverse(t *testing.T) {
 	for i := 0; i < nLines; i++ {
 		lineArray = append(lineArray, fmt.Sprintf("Hello World-%d", i))
 	}
-	logger.Debug(lineArray)
+	log.Debug(lineArray)
 	writer.Write([]byte(strings.Join(lineArray, "\n")))
 	writer.Flush()
 	writer.Close()
@@ -191,6 +194,8 @@ func TestReadFileInReverse(t *testing.T) {
 
 /*
 func TestAddOutMetadata(t *testing.T) {
+	t.Parallel()
+
 	assert := assert.New(t)
 
 	phonelab_backend.StagingDirBase = filepath.Join(testDirBase, "test-add-metadata/stage")

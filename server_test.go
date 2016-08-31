@@ -29,7 +29,7 @@ func testHttpMethod(c echo.Context) (err error) {
 }
 
 func TestServerConstructor(t *testing.T) {
-	//t.Parallel()
+	t.Parallel()
 	var server *phonelab_backend.Server
 	var err error
 	assert := assert.New(t)
@@ -50,7 +50,7 @@ func TestServerConstructor(t *testing.T) {
 }
 
 func TestSetupServer(t *testing.T) {
-	//t.Parallel()
+	t.Parallel()
 	var server *phonelab_backend.Server
 	var err error
 
@@ -70,7 +70,7 @@ func TestSetupServer(t *testing.T) {
 }
 
 func TestRunServer(t *testing.T) {
-	//t.Parallel()
+	t.Parallel()
 	var err error
 
 	var port int = 8082
