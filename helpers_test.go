@@ -160,6 +160,8 @@ func DeviceDataGenerator(deviceId string, port int, commChannel chan interface{}
 			fileWriter.Write([]byte(line))
 			currentSize += len(line)
 		}
+		fileWriter.Flush()
+		fileWriter.Close()
 
 		handlePayload := func(file *bytes.Buffer, size int) {
 			defer wg.Done()
@@ -172,7 +174,7 @@ func DeviceDataGenerator(deviceId string, port int, commChannel chan interface{}
 			commChannel <- PENDING
 			// Send back any data you want to
 			resp, body, err := gorequest.New().Post(url).
-				Set("Content-Length", fmt.Sprintf("%v", size)).
+				Set("Content-Length", fmt.Sprintf("%v", len(file.String()))).
 				Set("Accept-Encoding", "gzip").
 				Set("Content-Encoding", "gzip").
 				Set("Content-Type", "multipart/form-data").
@@ -197,8 +199,6 @@ func DeviceDataGenerator(deviceId string, port int, commChannel chan interface{}
 			}
 		}
 		wg.Add(1)
-		fileWriter.Flush()
-		fileWriter.Close()
 		go handlePayload(file, currentSize)
 		//fmt.Println(resp)
 
