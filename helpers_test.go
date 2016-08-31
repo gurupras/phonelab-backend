@@ -175,10 +175,6 @@ func DeviceDataGenerator(deviceId string, port int, commChannel chan interface{}
 				Send(file.String()).
 				End()
 
-			if resp.StatusCode != 200 {
-				panic("Error while doing POST")
-			}
-
 			_ = resp
 			_ = body
 			_ = err
@@ -190,6 +186,10 @@ func DeviceDataGenerator(deviceId string, port int, commChannel chan interface{}
 					fmt.Fprintln(os.Stderr, "Response is nil")
 				}
 			}
+			if resp.StatusCode != 200 {
+				fmt.Fprintln(os.Stderr, "Error while doing POST")
+			}
+
 			fmt.Println(fmt.Sprintf("%s: Sent file of size: %d bytes", deviceId, currentSize))
 			commChannel <- DONE
 		}
