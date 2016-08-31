@@ -1,6 +1,10 @@
 package phonelab_backend
 
 import (
+	"fmt"
+	"os"
+	"sync"
+
 	"github.com/gurupras/go-stoppableNetListener"
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/engine"
@@ -27,7 +31,19 @@ func New(port int) (server *Server, err error) {
 func (s *Server) Run() {
 	config := engine.Config{}
 	config.Listener = s.snl
-	s.Echo.Run(fasthttp.WithConfig(config))
+	serverWg := sync.WaitGroup{}
+	serverWg.Add(1)
+	go func() {
+		defer serverWg.Done()
+		// Recover from echo panic
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Fprintln(os.Stderr, r)
+			}
+		}()
+		s.Echo.Run(fasthttp.WithConfig(config))
+	}()
+	serverWg.Wait()
 }
 
 func (s *Server) Stop() {
