@@ -73,6 +73,8 @@ func TestUpload(t *testing.T) {
 func TestLoadCapability(t *testing.T) {
 	t.Parallel()
 
+	t.Skip("TestLoadCapability: Skipping until logic for evaluating output is decided")
+
 	assert := assert.New(t)
 
 	var port int = 8085
