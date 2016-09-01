@@ -70,10 +70,10 @@ func ParseLogline(line string) *Logline {
 	if err != nil {
 		return nil
 	}
-	tracetime, err := strconv.ParseFloat(kv_map["tracetime"], 64)
-	if err != nil {
-		return nil
-	}
+
+	// Cannot fail
+	tracetime, _ := strconv.ParseFloat(kv_map["tracetime"], 64)
+
 	pid, err := strconv.ParseInt(kv_map["pid"], 0, 32)
 	if err != nil {
 		return nil
