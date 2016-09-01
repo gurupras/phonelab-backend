@@ -258,7 +258,7 @@ func TestMakeStagedFilesPending(t *testing.T) {
 		}()
 		wg.Wait()
 		assert.Equal(totalFiles, verified, fmt.Sprintf("total(%d) != verified(%d)", totalFiles, verified))
-		//cleanup(config.StagingDir, config.OutDir)
+		cleanup(config.StagingDir, config.OutDir)
 	}
 
 	for i := 0; i < numIterations; i++ {
