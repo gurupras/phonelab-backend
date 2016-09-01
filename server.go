@@ -56,9 +56,6 @@ var (
 	outDirBase     string
 )
 
-func addRoutes(server *Server) {
-}
-
 func SetupServer(port int, config *Config, useLogger bool) (server *Server, err error) {
 	if server, err = New(port); err != nil {
 		return
