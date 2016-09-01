@@ -119,7 +119,7 @@ func DeviceDataGenerator(deviceId string, port int, commChannel chan interface{}
 	defer waitGroup.Done()
 
 	var (
-		MIN_REQ_SIZE int = 102400 * 8
+		MIN_REQ_SIZE int = 102400 * 4
 		MAX_REQ_SIZE int = 1024000
 	)
 
@@ -276,8 +276,7 @@ func cleanup(directories ...string) {
 	return
 }
 
-func RunTestServerAsync(port int, config *phonelab_backend.Config, serverPtr **phonelab_backend.Server,
-	workFuncs ...func(work *phonelab_backend.Work, processes ...phonelab_backend.ProcessingFunction) error) {
+func RunTestServerAsync(port int, config *phonelab_backend.Config, serverPtr **phonelab_backend.Server) {
 
 	var err error
 	defer Recover("RunTestServerAsync")
@@ -315,7 +314,7 @@ func RunTestServerAsync(port int, config *phonelab_backend.Config, serverPtr **p
 	pendingWorkHandlerWg.Add(1)
 	go func() {
 		defer pendingWorkHandlerWg.Done()
-		phonelab_backend.PendingWorkHandler(config, workFuncs...)
+		phonelab_backend.PendingWorkHandler(config)
 	}()
 	*serverPtr, err = phonelab_backend.SetupServer(port, config, false)
 	if err != nil {

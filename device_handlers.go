@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -15,10 +16,7 @@ import (
 	"github.com/gurupras/gocommons"
 )
 
-var (
-	PreProcessing  []ProcessingFunction
-	PostProcessing []ProcessingFunction
-)
+var ()
 
 type DeviceWork struct {
 	*Work
@@ -28,90 +26,113 @@ type DeviceWork struct {
 	EndTimestamp   int64
 }
 
-type ProcessingFunction func(work *DeviceWork) error
+type ProcessingFunction func(work *DeviceWork) (error, bool)
 
-func InitializeDeviceProcessingSteps() {
-	PreProcessing = append(PreProcessing, UpdateOutFile)
-	//PreProcessing = append(PreProcessing, UpdateStartEndTimestamps)
-	PostProcessing = append(PostProcessing, UpdateMetadata)
+type ProcessingConfig struct {
+	PreProcessing  []ProcessingFunction
+	Core           func(deviceWork *DeviceWork, processingConfig *ProcessingConfig) error
+	PostProcessing []ProcessingFunction
 }
 
-func ProcessStage(functions []ProcessingFunction, work *DeviceWork) (err error) {
+func InitializeProcessingConfig() *ProcessingConfig {
+	pc := new(ProcessingConfig)
+
+	pc.Core = ProcessStagedWork
+
+	pc.PreProcessing = append(pc.PreProcessing, UpdateOutFile)
+	pc.PreProcessing = append(pc.PreProcessing, UpdateMetadata)
+	return pc
+}
+
+func ProcessStage(functions []ProcessingFunction, work *DeviceWork) (errs []error, fail bool) {
+	var err error
 	for _, fn := range functions {
-		if err = fn(work); err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to run processing stage:", err)
-			return
+		if err, fail = fn(work); err != nil {
+			err = errors.New(fmt.Sprintf("Failed to run processing stage: %v", err))
+			errs = append(errs, err)
+			if fail {
+				return
+			}
 		}
 	}
 	return
 }
 
-func ProcessStagedWork(work *Work, processes ...ProcessingFunction) (err error) {
+func CopyStagedFileToOutput(deviceWork *DeviceWork) (err error, fail bool) {
 	var file *os.File
 	var n int64
 
+	// Critical
+	fail = true
+
+	// Actual processing I guess
+	file, err = os.OpenFile(deviceWork.StagingFileName, os.O_RDONLY, 0)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to open work.StagingFileName", err)
+		return
+	}
+	var compressedReader *gzip.Reader
+
+	if compressedReader, err = gzip.NewReader(file); err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to get gzip.Reader to staged file", err)
+		return
+	}
+
+	//fmt.Println("Input:", file.Name())
+	//fmt.Println("Output:", deviceWork.OutFile.Path)
+
+	//fmt.Println("Processing ...")
+	var outWriter gocommons.Writer
+	var outFile *gocommons.File
+
+	if outFile, err = gocommons.Open(deviceWork.OutFile.Path, os.O_WRONLY|os.O_APPEND, gocommons.GZ_TRUE); err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to open file for writing data", err)
+		return
+	}
+	defer outFile.Close()
+
+	if outWriter, err = outFile.Writer(1048576); err != nil {
+		if n, err = io.Copy(&outWriter, compressedReader); err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to copy from staging to out", err)
+		}
+	}
+	outWriter.Flush()
+	outWriter.Close()
+
+	_ = n
+	//fmt.Println("Updated outfile:", n)
+	return
+
+}
+
+func ProcessProcessConfig(work *Work, processingConfig *ProcessingConfig) (err error) {
 	deviceWork := &DeviceWork{
 		Work: work,
 	}
 
+	var errs []error
+	var fail bool
 	//fmt.Println("Starting pre-processing")
-	if err = ProcessStage(PreProcessing, deviceWork); err != nil {
+	if errs, fail = ProcessStage(processingConfig.PreProcessing, deviceWork); len(errs) > 0 && fail {
+		err = errors.New(fmt.Sprintf("Stopping ProcessProcessConfig due to fail condition...\nerrors:\n%v\n", errs))
 		return
 	}
 
-	defaultProcess := func(deviceWork *DeviceWork) (err error) {
-		// Actual processing I guess
-		file, err = os.OpenFile(work.StagingFileName, os.O_RDONLY, 0)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to open work.StagingFileName", err)
-			return
-		}
-		var compressedReader *gzip.Reader
-
-		if compressedReader, err = gzip.NewReader(file); err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to get gzip.Reader to staged file", err)
-			return
-		}
-
-		//fmt.Println("Input:", file.Name())
-		//fmt.Println("Output:", deviceWork.OutFile.Path)
-
-		//fmt.Println("Processing ...")
-		var outWriter gocommons.Writer
-		var outFile *gocommons.File
-
-		if outFile, err = gocommons.Open(deviceWork.OutFile.Path, os.O_WRONLY|os.O_APPEND, gocommons.GZ_TRUE); err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to open file for writing data", err)
-			return
-		}
-		defer outFile.Close()
-
-		if outWriter, err = outFile.Writer(1048576); err != nil {
-			if n, err = io.Copy(&outWriter, compressedReader); err != nil {
-				fmt.Fprintln(os.Stderr, "Failed to copy from staging to out", err)
-			}
-		}
-		outWriter.Flush()
-		outWriter.Close()
-
-		_ = n
-		//fmt.Println("Updated outfile:", n)
+	if err = processingConfig.Core(deviceWork, processingConfig); err != nil {
+		err = errors.New(fmt.Sprintf("Failed core processing: %v", err))
 		return
 	}
 
-	if processes == nil || len(processes) == 0 {
-		processes = []ProcessingFunction{defaultProcess}
-	}
-
-	if err = ProcessStage(processes, deviceWork); err != nil {
+	if errs, fail = ProcessStage(processingConfig.PostProcessing, deviceWork); len(errs) > 0 && fail {
+		err = errors.New(fmt.Sprintf("Stopping ProcessProcessConfig due to fail condition...\nerrors:\n%v\n", errs))
 		return
 	}
+	return
+}
 
-	// Now for post-processing
-	//fmt.Println("Starting post-processing")
-	if err = ProcessStage(PostProcessing, deviceWork); err != nil {
-		return
-	}
+func ProcessStagedWork(deviceWork *DeviceWork, processingConfig *ProcessingConfig) (err error) {
+	// Currently doesn't do anything other than CopyStagedFileToOutput
+	err, _ = CopyStagedFileToOutput(deviceWork)
 	return
 }
 
@@ -121,31 +142,33 @@ func OpenFileAndReader(fpath string) (*gocommons.File, *bufio.Scanner, error) {
 	var reader *bufio.Scanner
 
 	if fstruct, err = gocommons.Open(fpath, os.O_RDONLY, gocommons.GZ_UNKNOWN); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to open file", err)
+		err = errors.New(fmt.Sprintf("Failed to open file: %v", err))
 		return nil, nil, err
 	}
 
 	if reader, err = fstruct.Reader(1048576); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to get reader to file", err)
+		err = errors.New(fmt.Sprintf("Failed to get reader to file: %v", err))
 		fstruct.Close()
 		return nil, nil, err
 	}
 	return fstruct, reader, err
 }
 
-func UpdateOutFile(work *DeviceWork) error {
+func UpdateOutFile(work *DeviceWork) (err error, fail bool) {
 	// --------- ASSUMPTION ---------
 	// We assume that each log file can only have one boot ID.
 	// This is hopefully true
 	// ------- END ASSUMPTION -------
 
+	// Critical
+	fail = true
+
 	// Find bootID
-	var err error
 	var fstruct *gocommons.File
 	var reader *bufio.Scanner
 
 	if fstruct, reader, err = OpenFileAndReader(work.StagingFileName); err != nil {
-		return err
+		return
 	}
 	defer fstruct.Close()
 
@@ -160,35 +183,42 @@ func UpdateOutFile(work *DeviceWork) error {
 	}
 	//fmt.Println("BootID:", work.BootId)
 
-	if ok, err := gocommons.Exists(work.Work.OutDir); !ok || err != nil {
+	var ok bool
+	if ok, err = gocommons.Exists(work.Work.OutDir); !ok || err != nil {
 		if err = gocommons.Makedirs(work.Work.OutDir); err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to create output directory", err)
-			return err
+			err = errors.New(fmt.Sprintf("Failed to create output directory: %v", err))
+			return
 		}
 	}
 
 	outfile := filepath.Join(work.Work.OutDir, work.BootId+".gz")
 	fmt.Println("outfile:", outfile)
 	if work.OutFile, err = gocommons.Open(outfile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, gocommons.GZ_TRUE); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to open output file", err)
-		return err
+		err = errors.New(fmt.Sprintf("Failed to open output file", err))
+		return
 	}
 	//fmt.Println("Assigned outfile:", outfile)
-	return err
+	return
 }
 
-func UpdateMetadata(work *DeviceWork) error {
+func UpdateMetadata(work *DeviceWork) (err error, fail bool) {
+	// Critical
+	fail = true
+
+	var metadataPath string
+	var metadataFile *gocommons.File
+
 	outdir := work.OutDir
 
-	metadataPath := filepath.Join(outdir, work.BootId+".yaml")
+	metadataPath = filepath.Join(outdir, work.BootId+".yaml")
 	exists := false
 	if ok, _ := gocommons.Exists(metadataPath); ok {
 		exists = true
 	}
-	metadataFile, err := gocommons.Open(metadataPath, os.O_CREATE|os.O_RDWR, gocommons.GZ_FALSE)
+	metadataFile, err = gocommons.Open(metadataPath, os.O_CREATE|os.O_RDWR, gocommons.GZ_FALSE)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to update metadata", err)
-		return err
+		return
 	}
 
 	outMetadata := &OutMetadata{}
@@ -198,7 +228,7 @@ func UpdateMetadata(work *DeviceWork) error {
 		buf := new(bytes.Buffer)
 		if _, err = io.Copy(buf, metadataFile.File); err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to read metadata from existing file", err)
-			return err
+			return
 		}
 		yaml.Unmarshal(buf.Bytes(), existingMetadata)
 		// Ensure that the device IDs are the same
@@ -219,20 +249,20 @@ func UpdateMetadata(work *DeviceWork) error {
 	var writer gocommons.Writer
 	var bytes []byte
 	if writer, err = metadataFile.Writer(0); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to get writer for metadata file", err)
-		return err
+		err = errors.New(fmt.Sprintf("Failed to get writer for metadata file: %v", err))
+		return
 	}
 	if bytes, err = yaml.Marshal(outMetadata); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to convert struct to yaml-bytes", err)
-		return err
+		err = errors.New(fmt.Sprintf("Failed to convert struct to yaml-bytes: %v", err))
+		return
 	}
 	if _, err = writer.Write(bytes); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to write metadata to file", err)
-		return err
+		err = errors.New(fmt.Sprintf("Failed to write metadata to file: %v", err))
+		return
 	}
 	writer.Flush()
 	writer.Close()
-	return err
+	return
 }
 
 /*

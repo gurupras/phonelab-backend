@@ -23,35 +23,46 @@ func TestProcessStagedWork(t *testing.T) {
 
 	defer Recover("TestProcessStagedWork")
 
+	processingConfig := new(phonelab_backend.ProcessingConfig)
+
+	dummyCore := func(work *phonelab_backend.DeviceWork, processingConfig *phonelab_backend.ProcessingConfig) (err error) {
+		return
+	}
+
+	dummyCoreThrowsError := func(work *phonelab_backend.DeviceWork, processingConfig *phonelab_backend.ProcessingConfig) (err error) {
+		return errors.New("Expected")
+	}
+
 	// Test for error handling
-	errFn := func(work *phonelab_backend.DeviceWork) error {
+	errFn := func(work *phonelab_backend.DeviceWork) (error, bool) {
 		// Just throw an error
 		logger.Debug("Throwing error")
-		return errors.New("Expected")
+		return errors.New("Expected"), true
 	}
+
 	dummyWork := &phonelab_backend.Work{}
-	phonelab_backend.PreProcessing = append(phonelab_backend.PreProcessing, errFn)
-	err = phonelab_backend.ProcessStagedWork(dummyWork)
+	processingConfig.PreProcessing = append(processingConfig.PreProcessing, errFn)
+	processingConfig.Core = dummyCore
+	err = phonelab_backend.ProcessProcessConfig(dummyWork, processingConfig)
 	assert.NotNil(err, "Pre-processing error not properly handled")
-	phonelab_backend.PreProcessing = phonelab_backend.PreProcessing[:0]
+	processingConfig.PreProcessing = processingConfig.PreProcessing[:0]
 
 	// Now test core-processing error handling
-	dummyCoreProcess := func(work *phonelab_backend.DeviceWork) (err error) {
-		return errors.New("Expected")
-	}
-	phonelab_backend.PostProcessing = append(phonelab_backend.PostProcessing, errFn)
-	err = phonelab_backend.ProcessStagedWork(dummyWork, dummyCoreProcess)
+	//phonelab_backend.PostProcessing = append(phonelab_backend.PostProcessing, errFn)
+	processingConfig.Core = dummyCoreThrowsError
+	err = phonelab_backend.ProcessProcessConfig(dummyWork, processingConfig)
 	assert.NotNil(err, "Core-processing error not properly handled")
+	processingConfig.Core = dummyCore
 
 	// Now test post-processing error handling
 	// We create a dummy core process and feed this into ProcessStagedWork
-	dummyCoreProcess = func(work *phonelab_backend.DeviceWork) (err error) {
-		return
-	}
-	phonelab_backend.PostProcessing = append(phonelab_backend.PostProcessing, errFn)
-	err = phonelab_backend.ProcessStagedWork(dummyWork, dummyCoreProcess)
+	processingConfig.PostProcessing = append(processingConfig.PostProcessing, errFn)
+	processingConfig.Core = dummyCore
+	err = phonelab_backend.ProcessProcessConfig(dummyWork, processingConfig)
 	assert.NotNil(err, "Post-processing error not properly handled")
-	phonelab_backend.PostProcessing = phonelab_backend.PostProcessing[:0]
+	processingConfig.PostProcessing = processingConfig.PostProcessing[:0]
+
+	processingConfig = nil
 
 	var port int = 11929
 	var server *phonelab_backend.Server
@@ -64,44 +75,46 @@ func TestProcessStagedWork(t *testing.T) {
 		totalFiles      int = nDevices * nFilesPerDevice
 	)
 
-	phonelab_backend.InitializeProcessingSteps()
+	config := new(phonelab_backend.Config)
+	config.StagingConfig = phonelab_backend.InitializeStagingConfig()
+	config.ProcessingConfig = phonelab_backend.InitializeProcessingConfig()
 
 	wg := sync.WaitGroup{}
 	mutex := sync.Mutex{}
 
-	preProcess := func(w *phonelab_backend.DeviceWork) (err error) {
-		log.Debug("preProcess")
+	preProcess := func(w *phonelab_backend.DeviceWork) (err error, fail bool) {
+		log.Info("preProcess")
 		mutex.Lock()
 		started++
 		mutex.Unlock()
 		return
 	}
-	postProcess := func(w *phonelab_backend.DeviceWork) (err error) {
+	postProcess := func(w *phonelab_backend.DeviceWork) (err error, fail bool) {
 		mutex.Lock()
 		verified++
-		log.Debug("Verified:", verified)
+		log.Info("Verified:", verified)
 		if verified == totalFiles {
 			wg.Done()
 		}
 		mutex.Unlock()
 		return
 	}
-	customWorkFn := func(w *phonelab_backend.Work, processes ...phonelab_backend.ProcessingFunction) error {
-		return phonelab_backend.ProcessStagedWork(w)
+	customCore := func(w *phonelab_backend.DeviceWork, processingConfig *phonelab_backend.ProcessingConfig) error {
+		return phonelab_backend.ProcessStagedWork(w, processingConfig)
 	}
+	config.ProcessingConfig.Core = customCore
 
-	phonelab_backend.PreProcessing = append(phonelab_backend.PreProcessing, preProcess)
-	phonelab_backend.PostProcessing = append(phonelab_backend.PostProcessing, postProcess)
+	config.ProcessingConfig.PreProcessing = append(config.ProcessingConfig.PreProcessing, preProcess)
+	config.ProcessingConfig.PostProcessing = append(config.ProcessingConfig.PostProcessing, postProcess)
 
 	wg.Add(1)
 
-	config := new(phonelab_backend.Config)
 	config.WorkChannel = make(chan *phonelab_backend.Work, 1000)
 	serverWg := sync.WaitGroup{}
 	serverWg.Add(1)
 	go func() {
 		defer serverWg.Done()
-		RunTestServerAsync(port, config, &server, customWorkFn)
+		RunTestServerAsync(port, config, &server)
 	}()
 	UploadFiles(port, nDevices, nFilesPerDevice, assert)
 

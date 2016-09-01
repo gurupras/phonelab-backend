@@ -3,6 +3,7 @@ package phonelab_backend
 import (
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -15,26 +16,29 @@ import (
 	"github.com/labstack/echo"
 )
 
-var (
-	StagingPreProcessing  []StagingProcess
-	StagingPostProcessing []StagingProcess
-)
+type StagingProcess func(work *Work) (error, bool)
 
-type StagingProcess func(work *Work) error
-
-func InitializeProcessingSteps() {
-	InitializeStagingProcessingSteps()
-	InitializeDeviceProcessingSteps()
+type StagingConfig struct {
+	PreProcessing  []StagingProcess
+	PostProcessing []StagingProcess
 }
 
-func InitializeStagingProcessingSteps() {
-	StagingPreProcessing = append(StagingPreProcessing, UpdateStagingMetadata)
+func InitializeStagingConfig() *StagingConfig {
+	sc := new(StagingConfig)
+	sc.PreProcessing = append(sc.PreProcessing, CreateStagingFile)
+	sc.PreProcessing = append(sc.PreProcessing, UpdateStagingMetadata)
+
+	sc.PostProcessing = append(sc.PostProcessing, MakeStagedFileReadOnly)
+	return sc
 }
 
-func UpdateStagingMetadata(work *Work) (err error) {
+func UpdateStagingMetadata(work *Work) (err error, fail bool) {
 	var fstruct *gocommons.File
 	var writer gocommons.Writer
 	var n int64
+
+	// Updating metadata is mandatory
+	fail = true
 
 	// The stream is already compressed
 	if fstruct, err = gocommons.Open(work.StagingFileName, os.O_APPEND|os.O_WRONLY, gocommons.GZ_FALSE); err != nil {
@@ -67,12 +71,29 @@ func UpdateStagingMetadata(work *Work) (err error) {
 	return
 }
 
-func HandleUpload(input io.Reader, work *Work, workChannel chan *Work) (bytesWritten int64, err error) {
+func RunStagingProcesses(functions []StagingProcess, work *Work) (errs []error, fail bool) {
+	var err error
+	for _, fn := range functions {
+		if err, fail = fn(work); err != nil {
+			err = errors.New(fmt.Sprintf("Failed to run processing stage: %v", err))
+			errs = append(errs, err)
+			if fail {
+				return
+			}
+		}
+	}
+	return
+}
+
+func CreateStagingFile(work *Work) (err error, fail bool) {
+	// Mandatory step
+	fail = true
+
 	var file *os.File
 
 	gocommons.Makedirs(work.StagingDir)
 	if file, err = ioutil.TempFile(work.StagingDir, "log-"); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to create temporary file", err)
+		err = errors.New(fmt.Sprintf("Failed to create temporary file: %v", err))
 		return
 	}
 	file.Close()
@@ -80,23 +101,37 @@ func HandleUpload(input io.Reader, work *Work, workChannel chan *Work) (bytesWri
 
 	path := file.Name() + ".gz"
 	if file, err = os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0644); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to create temporary file with .gz extension", err)
+		err = errors.New(fmt.Sprintf("Failed to create temporary file with .gz extension: %v", err))
 		return
 	}
 	file.Close()
 
 	// Now do the staging part
 	work.StagingFileName = path
+	return
+}
 
-	// Pre processing
-	for _, process := range StagingPreProcessing {
-		if err = process(work); err != nil {
-			fmt.Fprintln(os.Stderr, "Failed pre-processing step", err)
-			return
-		}
+func MakeStagedFileReadOnly(work *Work) (err error, fail bool) {
+	// Not a mandatory step
+	fail = false
+
+	err = os.Chmod(work.StagingFileName, 0440)
+	if err != nil {
+		err = errors.New(fmt.Sprintf("Failed to make staging file read-only: %v", err))
+		return
 	}
-	// The stream is already compressed
-	fstruct, err := gocommons.Open(path, os.O_APPEND|os.O_WRONLY, gocommons.GZ_TRUE)
+	return
+}
+
+func HandleUpload(input io.Reader, work *Work, workChannel chan *Work, stagingConfig *StagingConfig) (bytesWritten int64, err error) {
+	var fail bool
+	var errs []error
+	if errs, fail = RunStagingProcesses(stagingConfig.PreProcessing, work); len(errs) > 0 && fail {
+		err = errors.New(fmt.Sprintf("Stopping HandleUpload due to fail condition...\nerrors:\n%v\n", errs))
+		return
+	}
+
+	fstruct, err := gocommons.Open(work.StagingFileName, os.O_APPEND|os.O_WRONLY, gocommons.GZ_TRUE)
 	if err != nil {
 		panic("Could not open tempfile")
 	}
@@ -109,6 +144,7 @@ func HandleUpload(input io.Reader, work *Work, workChannel chan *Work) (bytesWri
 	}
 
 	// Do the payload copy
+	// The stream is already compressed
 	var compressedInput *gzip.Reader
 	var inputReader io.Reader
 
@@ -119,32 +155,20 @@ func HandleUpload(input io.Reader, work *Work, workChannel chan *Work) (bytesWri
 		inputReader = compressedInput
 	}
 	if bytesWritten, err = io.Copy(&writer, inputReader); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to copy input to:", path, err)
+		fmt.Fprintln(os.Stderr, "Failed to copy input to:", work.StagingFileName, err)
 		return
 	}
+	// We want to flush/close before post processing. So do that now
 	writer.Close()
 	fstruct.Close()
 
-	// Post processing
-	for _, process := range StagingPostProcessing {
-		if err = process(work); err != nil {
-			fmt.Fprintln(os.Stderr, "Failed post-processing step", err)
-			return
-		}
+	// Now post processing
+	if errs, fail = RunStagingProcesses(stagingConfig.PostProcessing, work); len(errs) > 0 && fail {
+		err = errors.New(fmt.Sprintf("Stopping HandleUpload due to fail condition...\nerrors:\n%v\n", errs))
+		return
 	}
 
-	// TODO: Move this to post-processing
-	err = os.Chmod(path, 0440)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, fmt.Sprintf("Failed to make staging "+
-			"file read-only:\n%s\n"+
-			"This is not a fatal error..continuing", err))
-	}
-	//fmt.Println(fmt.Sprintf("Wrote %v bytes to :%v", bytesWritten, file.Name()))
-
-	// We want to flush/close before passing on the work to the device. So do that now
 	workChannel <- work
-
 	return
 }
 
@@ -169,15 +193,10 @@ func HandleUploaderPost(c echo.Context, config *Config) (err error) {
 	work.StagingDir = filepath.Join(config.StagingDir, deviceId)
 	work.OutDir = filepath.Join(config.OutDir, deviceId)
 
-	HandleUpload(body, work, config.WorkChannel)
-
-	// Currently unused
-	_ = body
-	_ = version
-	_ = packageName
-	_ = fileName
-
+	if _, err = HandleUpload(body, work, config.WorkChannel, config.StagingConfig); err != nil {
+		return c.String(http.StatusInternalServerError, err.Error())
+	} else {
+		return c.String(http.StatusOK, "OK")
+	}
 	//fmt.Printf("Headers:\n%v\n", c.Request().Header())
-
-	return c.String(http.StatusOK, "OK")
 }

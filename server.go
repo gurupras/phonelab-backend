@@ -71,6 +71,15 @@ func SetupServer(port int, config *Config, useLogger bool) (server *Server, err 
 	if config.WorkChannel == nil {
 		config.WorkChannel = make(chan *Work, 1000)
 	}
+
+	if config.StagingConfig == nil {
+		config.StagingConfig = InitializeStagingConfig()
+	}
+
+	if config.ProcessingConfig == nil {
+		config.ProcessingConfig = InitializeProcessingConfig()
+	}
+
 	// Set up the routes
 	handleUploaderPost := func(c echo.Context) error {
 		return HandleUploaderPost(c, config)

@@ -2,57 +2,93 @@ package phonelab_backend_test
 
 import (
 	"path/filepath"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/gurupras/phonelab_backend"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestUpload(t *testing.T) {
+func TestStaging(t *testing.T) {
 	t.Parallel()
+
+	var port int = 8083
 	var server *phonelab_backend.Server
 	assert := assert.New(t)
 
-	defer Recover("TestUpload")
+	defer Recover("TestStaging")
 
-	phonelab_backend.InitializeProcessingSteps()
-
-	workFn := func(work *phonelab_backend.Work, processes ...phonelab_backend.ProcessingFunction) (err error) {
+	dummyWork := func(work *phonelab_backend.DeviceWork, processingConfig *phonelab_backend.ProcessingConfig) (err error) {
 		// Dummy work function. We're only testing whether server
 		// correctly receives upload and stages it
 		return
 	}
+
 	config := new(phonelab_backend.Config)
 
 	config.WorkChannel = make(chan *phonelab_backend.Work, 1000)
-	go RunTestServerAsync(8083, config, &server, workFn)
 
-	UploadFiles(8083, 3, 5, assert)
+	config.StagingConfig = phonelab_backend.InitializeStagingConfig()
+	config.ProcessingConfig = new(phonelab_backend.ProcessingConfig)
+	config.ProcessingConfig.Core = dummyWork
+
+	go RunTestServerAsync(port, config, &server)
+
+	UploadFiles(port, 3, 5, assert)
 	server.Stop()
 	cleanup()
 }
 
-/*
+func TestUpload(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+
+	var port int = 8084
+	var server *phonelab_backend.Server
+
+	defer Recover("TestUpload")
+
+	config := new(phonelab_backend.Config)
+
+	config.WorkChannel = make(chan *phonelab_backend.Work, 1000)
+	config.ProcessingConfig = phonelab_backend.InitializeProcessingConfig()
+
+	count := 0
+	countFn := func(work *phonelab_backend.DeviceWork) (err error, fail bool) {
+		count++
+		return
+	}
+	config.ProcessingConfig.PostProcessing = append(config.ProcessingConfig.PostProcessing, countFn)
+
+	go RunTestServerAsync(port, config, &server)
+
+	UploadFiles(port, 3, 5, assert)
+	server.Stop()
+	assert.Equal(15, count, "Did not process expected # of uploaded files")
+	cleanup()
+}
+
 func TestLoadCapability(t *testing.T) {
 	t.Parallel()
-	var server *phonelab_backend.Server
+
 	assert := assert.New(t)
+
+	var port int = 8085
+	var server *phonelab_backend.Server
 
 	defer Recover("TestLoadCapability")
 
-	phonelab_backend.InitializeProcessingSteps()
-
 	config := new(phonelab_backend.Config)
 	config.WorkChannel = make(chan *phonelab_backend.Work, 1000)
-	go RunTestServerAsync(8084, config, &server)
+	go RunTestServerAsync(port, config, &server)
 
 	devices := LoadDevicesFromFile("deviceids.txt", assert)
 
-	nDevices := 20
+	nDevices := 30
 
 	commChannel := make(chan interface{}, 100)
-	defer close(commChannel)
-	channels := make([]chan interface{}, 0)
 
 	// Function to track pending workloads
 	go func() {
@@ -62,7 +98,7 @@ func TestLoadCapability(t *testing.T) {
 		go func() {
 			for {
 				time.Sleep(1 * time.Second)
-				logger.Debug("TLC: Pending uploads:", pending)
+				logger.Info("TLC: Pending uploads:", pending)
 			}
 		}()
 
@@ -84,29 +120,42 @@ func TestLoadCapability(t *testing.T) {
 	}()
 
 	wg := new(sync.WaitGroup)
+
+	start := time.Now().UnixNano()
+	testTimeNanos := int64(30 * 1e9)
+
+	dataGenerator := func(deviceId string) {
+		dataRequestChannel := make(chan interface{})
+		go func() {
+			for {
+				now := time.Now().UnixNano()
+				if now-start > testTimeNanos {
+					break
+				}
+				// Generate requests as fast as possible
+				// Therefore, no sleeps
+				dataRequestChannel <- struct{}{}
+			}
+			close(dataRequestChannel)
+		}()
+		DeviceDataGenerator(deviceId, port, commChannel, dataRequestChannel, wg)
+	}
+
 	for idx := 0; idx < nDevices; idx++ {
 		device := devices[idx]
-
-		deviceChannel := make(chan interface{})
-		channels = append(channels, deviceChannel)
 		wg.Add(1)
-		go DeviceDataGenerator(device, 8084, commChannel, deviceChannel, wg)
+		go dataGenerator(device)
 	}
 
-	time.Sleep(10 * time.Second)
-
-	logger.Debug("Terminating ...")
-	for _, channel := range channels {
-		channel <- struct{}{}
-	}
+	logger.Debug("Waiting to terminate ...")
 	wg.Wait()
+	logger.Debug("Terminating ...")
 
 	logger.Debug("Stopping server ...")
 	//TODO: Server stop logic
 	server.Stop()
 	//cleanup()
 }
-*/
 
 func TestAddStagingMetadata(t *testing.T) {
 	t.Parallel()
@@ -117,21 +166,21 @@ func TestAddStagingMetadata(t *testing.T) {
 	stagingDirBase := filepath.Join(testDirBase, "staging-test-add-metadata/")
 	outDirBase := filepath.Join(testDirBase, "out-test-add-metadata/")
 
-	port := 31121
+	port := 8086
 	var server *phonelab_backend.Server
 	config := new(phonelab_backend.Config)
 	config.WorkChannel = make(chan *phonelab_backend.Work, 1000)
 	config.StagingDir = stagingDirBase
 	config.OutDir = outDirBase
 
-	phonelab_backend.InitializeStagingProcessingSteps()
-
-	workFn := func(work *phonelab_backend.Work, processes ...phonelab_backend.ProcessingFunction) (err error) {
+	config.ProcessingConfig = new(phonelab_backend.ProcessingConfig)
+	dummyWork := func(work *phonelab_backend.DeviceWork, processingConfig *phonelab_backend.ProcessingConfig) (err error) {
 		// Do nothing. We're only testing adding staging metadata
 		return
 	}
+	config.ProcessingConfig.Core = dummyWork
 
-	go RunTestServerAsync(port, config, &server, workFn)
+	go RunTestServerAsync(port, config, &server)
 	UploadFiles(port, 1, 1, assert)
 	server.Stop()
 	cleanup(stagingDirBase, outDirBase)

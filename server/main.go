@@ -37,8 +37,6 @@ func Main(args []string) (err error) {
 	parser := setup_parser()
 	ParseArgs(parser, args)
 
-	phonelab_backend.InitializeProcessingSteps()
-
 	config := new(phonelab_backend.Config)
 	config.WorkChannel = make(chan *phonelab_backend.Work, 1000)
 	config.StagingDir = stagingDir

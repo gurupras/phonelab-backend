@@ -29,6 +29,8 @@ type Config struct {
 	StagingDir      string
 	OutDir          string
 	WorkChannelLock sync.Mutex
+	*StagingConfig
+	*ProcessingConfig
 }
 
 func (c *Config) CloseWorkChannel() {
@@ -102,7 +104,7 @@ func MakeStagedFilesPending(config *Config) error {
 	return err
 }
 
-func DeviceWorkHandler(deviceId string, workChannel chan *Work, workFn func(work *Work, processes ...ProcessingFunction) error, statusChannel chan string) (err error) {
+func DeviceWorkHandler(deviceId string, workChannel chan *Work, processingConfig *ProcessingConfig, statusChannel chan string) (err error) {
 	var work *Work
 	var ok bool
 
@@ -113,28 +115,18 @@ func DeviceWorkHandler(deviceId string, workChannel chan *Work, workFn func(work
 			}
 			break
 		}
-		//TODO: Write logic to handle the work
-		// We need to pick up files from the staging area, process them, and move the result to 'out'.
-		// We could do per-work goroutines here, but for now, we keep it simple.
-		if err = workFn(work); err != nil {
+
+		if err = ProcessProcessConfig(work, processingConfig); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 		}
 	}
 	return
 }
 
-func PendingWorkHandler(config *Config, workFuncs ...func(work *Work, processes ...ProcessingFunction) error) {
+func PendingWorkHandler(config *Config) {
 	var work *Work
 	var ok bool
 	var deviceWorkChannel chan *Work
-
-	// TODO: Currently, we only use the first function passed in
-	var workFunc func(work *Work, processes ...ProcessingFunction) error
-	if workFuncs != nil && len(workFuncs) > 0 {
-		workFunc = workFuncs[0]
-	} else {
-		workFunc = ProcessStagedWork
-	}
 
 	DeviceWorkChannel := make(map[string]chan *Work)
 
@@ -148,7 +140,7 @@ func PendingWorkHandler(config *Config, workFuncs ...func(work *Work, processes 
 	// we wait for all device handlers to terminate before we return
 	dwh := func(deviceId string, deviceWorkChannel chan *Work) (err error) {
 		defer wg.Done()
-		err = DeviceWorkHandler(deviceId, deviceWorkChannel, workFunc, nil)
+		err = DeviceWorkHandler(deviceId, deviceWorkChannel, config.ProcessingConfig, nil)
 		return err
 	}
 

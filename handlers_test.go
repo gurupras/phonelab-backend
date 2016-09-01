@@ -30,12 +30,19 @@ func TestDeviceWorkHandler(t *testing.T) {
 	channel = make(chan *phonelab_backend.Work)
 
 	count := 0
-	countFn := func(work *phonelab_backend.Work, processes ...phonelab_backend.ProcessingFunction) (err error) {
+	countMutex := sync.Mutex{}
+
+	countFn := func(work *phonelab_backend.DeviceWork, processingConfig *phonelab_backend.ProcessingConfig) (err error) {
+		countMutex.Lock()
+		defer countMutex.Unlock()
 		count++
 		return
 	}
 
-	go phonelab_backend.DeviceWorkHandler("dummy", channel, countFn, statusChannel)
+	processingConfig := new(phonelab_backend.ProcessingConfig)
+	processingConfig.Core = countFn
+
+	go phonelab_backend.DeviceWorkHandler("dummy", channel, processingConfig, statusChannel)
 
 	for i := 0; i < 1000; i++ {
 		channel <- &phonelab_backend.Work{}
@@ -55,8 +62,7 @@ func TestPendingWorkHandler(t *testing.T) {
 
 	defer Recover("TestPendingWorkHandler")
 
-	phonelab_backend.InitializeStagingProcessingSteps()
-
+	// XXX: What is this first part testing?
 	config := new(phonelab_backend.Config)
 	config.WorkChannel = make(chan *phonelab_backend.Work, 1000)
 	config.StagingDir, err = ioutil.TempDir(testDirBase, "staging-")
@@ -73,10 +79,11 @@ func TestPendingWorkHandler(t *testing.T) {
 	wg.Wait()
 	config.WorkChannel = nil
 
+	// Now we do some _real_ work
 	started := 0
 	verified := 0
 	mutex := sync.Mutex{}
-	countFn := func(work *phonelab_backend.Work, processes ...phonelab_backend.ProcessingFunction) (err error) {
+	countFn := func(work *phonelab_backend.DeviceWork, processingConfig *phonelab_backend.ProcessingConfig) (err error) {
 		mutex.Lock()
 		verified++
 		mutex.Unlock()
@@ -84,11 +91,13 @@ func TestPendingWorkHandler(t *testing.T) {
 	}
 
 	config.WorkChannel = make(chan *phonelab_backend.Work, 1000)
+	config.ProcessingConfig = new(phonelab_backend.ProcessingConfig)
+	config.ProcessingConfig.Core = countFn
 	// We start PendingWorkHandler in a goroutine from which we can signal back that it has returned
 	pendingWorkHandlerDone := make(chan int)
 	go func() {
 		defer close(pendingWorkHandlerDone)
-		phonelab_backend.PendingWorkHandler(config, countFn)
+		phonelab_backend.PendingWorkHandler(config)
 	}()
 
 	devices := LoadDevicesFromFile("./deviceids.txt", assert)
@@ -162,8 +171,6 @@ func TestMakeStagedFilesPending(t *testing.T) {
 
 	defer Recover("TestMakeStagedFilesPending")
 
-	phonelab_backend.InitializeStagingProcessingSteps()
-
 	stagingDirBase := filepath.Join(testDirBase, "staging-makestagedfilespending")
 	outDirBase := filepath.Join(testDirBase, "out-makestagedfilespending")
 
@@ -196,6 +203,7 @@ func TestMakeStagedFilesPending(t *testing.T) {
 		config.WorkChannel = make(chan *phonelab_backend.Work, 1000)
 		config.StagingDir = fmt.Sprintf("%s-%d", stagingDirBase, i)
 		config.OutDir = fmt.Sprintf("%s-%d", outDirBase, i)
+		config.ProcessingConfig = new(phonelab_backend.ProcessingConfig)
 	}
 
 	iterWg := sync.WaitGroup{}
@@ -213,16 +221,17 @@ func TestMakeStagedFilesPending(t *testing.T) {
 
 		totalFiles := 0
 
-		workFn := func(work *phonelab_backend.Work, processes ...phonelab_backend.ProcessingFunction) (err error) {
+		workFn := func(work *phonelab_backend.DeviceWork, processingConfig *phonelab_backend.ProcessingConfig) (err error) {
 			totalFiles++
 			return
 		}
+		config.ProcessingConfig.Core = workFn
 
 		serverWg := sync.WaitGroup{}
 		serverWg.Add(1)
 		go func() {
 			defer serverWg.Done()
-			RunTestServerAsync(port, config, &server, workFn)
+			RunTestServerAsync(port, config, &server)
 		}()
 		UploadFiles(port, nDevices, nFilesPerDevice, assert)
 
@@ -236,11 +245,12 @@ func TestMakeStagedFilesPending(t *testing.T) {
 
 		// By now all the device handlers should have staged the files
 		config.WorkChannel = make(chan *phonelab_backend.Work, 1000)
+		config.ProcessingConfig = new(phonelab_backend.ProcessingConfig)
 		mutex := sync.Mutex{}
 		wg := new(sync.WaitGroup)
 
 		var verified int = 0
-		countFn := func(work *phonelab_backend.Work, processes ...phonelab_backend.ProcessingFunction) (err error) {
+		countFn := func(work *phonelab_backend.DeviceWork, processingconfig *phonelab_backend.ProcessingConfig) (err error) {
 			mutex.Lock()
 			verified++
 			logger.Debug(fmt.Sprintf("%d - %d/%d", idx, verified, totalFiles))
@@ -250,11 +260,12 @@ func TestMakeStagedFilesPending(t *testing.T) {
 			mutex.Unlock()
 			return
 		}
+		config.ProcessingConfig.Core = countFn
 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			phonelab_backend.PendingWorkHandler(config, countFn)
+			phonelab_backend.PendingWorkHandler(config)
 		}()
 		wg.Wait()
 		assert.Equal(totalFiles, verified, fmt.Sprintf("total(%d) != verified(%d)", totalFiles, verified))
