@@ -3,8 +3,8 @@ language: go
 go:
   - 1.6
 
-before_cache:
-  - rm -rf $GOPATH/src/github.com/gurupras/phonelab_backend
+#before_cache:
+#  - rm -rf $GOPATH/src/github.com/gurupras/phonelab_backend
 
 cache:
   directories:
