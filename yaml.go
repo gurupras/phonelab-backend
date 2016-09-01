@@ -52,8 +52,6 @@ func WriteStagingMetadata(writer io.Writer, work *Work) (err error) {
 	buf := new(bytes.Buffer)
 	buf.Write(metadata)
 	metadataStr := buf.String()
-	if _, err := writer.Write([]byte(fmt.Sprintf("---\n%v---\n", metadataStr))); err != nil {
-		return err
-	}
+	_, err = writer.Write([]byte(fmt.Sprintf("---\n%v---\n", metadataStr)))
 	return
 }
