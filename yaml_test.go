@@ -2,6 +2,7 @@ package phonelab_backend_test
 
 import (
 	"bytes"
+	"errors"
 	"testing"
 
 	"gopkg.in/yaml.v2"
@@ -53,6 +54,13 @@ func TestGenerateStagingMetadata(t *testing.T) {
 	assert.NotNil(metadata, "No metadata from proper work")
 }
 
+type DummyWriter string
+
+func (dw *DummyWriter) Write([]byte) (n int, err error) {
+	// Just throw error
+	return -1, errors.New("Exected")
+}
+
 func TestWriteStagingMetadata(t *testing.T) {
 	t.Parallel()
 
@@ -69,6 +77,11 @@ func TestWriteStagingMetadata(t *testing.T) {
 
 	err = phonelab_backend.WriteStagingMetadata(&buf, work)
 	assert.Nil(err, "Error in writing YAML metadata")
+
+	// Force the writer to fail for coverage
+	dw := new(DummyWriter)
+	err = phonelab_backend.WriteStagingMetadata(dw, work)
+	assert.NotNil(err, "Expected error but got none")
 
 	yamlStruct = phonelab_backend.StagingMetadata{}
 	err = yaml.Unmarshal(buf.Bytes(), &yamlStruct)
@@ -94,4 +107,5 @@ func TestWriteStagingMetadata(t *testing.T) {
 	assert.Equal(yamlStruct.DeviceId, "dummy", "DeviceId did not match")
 	assert.Equal(yamlStruct.PackageName, "com.example.test", "PackageName did not match")
 	assert.Equal(yamlStruct.UploadTimestamp, int64(14), "UploadTimestamp did not match")
+
 }
