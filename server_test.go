@@ -47,6 +47,7 @@ func TestServerConstructor(t *testing.T) {
 	server, err = phonelab_backend.New(14111)
 	assert.NotNil(server, "Server was not created despite valid port")
 	assert.Nil(err, "Error on valid port")
+	logger.Debug("Attempting to stop server")
 }
 
 func TestSetupServer(t *testing.T) {
@@ -67,13 +68,11 @@ func TestSetupServer(t *testing.T) {
 	server, err = phonelab_backend.SetupServer(14112, config, false)
 	assert.True(server != nil, "Server was not created despite valid port")
 	assert.True(err == nil, "Error on valid port")
-	server.Stop()
 
 	// Test server without logger for converage
-	server, err = phonelab_backend.SetupServer(14112, config, true)
+	server, err = phonelab_backend.SetupServer(14113, config, true)
 	assert.True(server != nil, "Server was not created despite valid port")
 	assert.True(err == nil, "Error on valid port")
-	server.Stop()
 }
 
 func TestRunServer(t *testing.T) {
@@ -86,8 +85,8 @@ func TestRunServer(t *testing.T) {
 
 	defer Recover("TestRunServer")
 
+	var server *phonelab_backend.Server
 	go func() {
-		var server *phonelab_backend.Server
 		server, err = phonelab_backend.New(port)
 		assert.Nil(err, "Failed to start server", err)
 		server.POST("/uploader/:version/:deviceId/:packageName/:fileName", testHttpMethod)
@@ -103,4 +102,5 @@ func TestRunServer(t *testing.T) {
 	assert.True(errors == nil, "POST request failed", errors)
 	assert.Equal(200, resp.StatusCode, "POST request failed")
 	assert.Equal("OK", payload, "POST request failed")
+	server.Stop()
 }
