@@ -1,15 +1,10 @@
 package phonelab_backend
 
 import (
-	"errors"
-	"fmt"
-	"reflect"
 	"regexp"
 	"strconv"
-	"strings"
 	"time"
 
-	"github.com/gurupras/gocommons"
 	"github.com/pbnjay/strptime"
 )
 
@@ -110,6 +105,8 @@ type Logline struct {
 
 type Loglines []*Logline
 
+// Commented out till implementation is done
+/*
 func ParseLoglineConvert(line string) gocommons.SortInterface {
 	if ll := ParseLogline(line); ll != nil {
 		return ll
@@ -159,3 +156,4 @@ func (l *Logline) Less(s gocommons.SortInterface) (ret bool, err error) {
 out:
 	return
 }
+*/
