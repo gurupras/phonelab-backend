@@ -4,7 +4,6 @@ go:
   - 1.6
 
 #before_cache:
-#  - rm -rf $GOPATH/src/github.com/gurupras/phonelab_backend
 
 cache:
   directories:
@@ -16,7 +15,9 @@ before_install:
 
 script:
   - git log --oneline | head -n 1
-  - go test -coverprofile=coverage.txt -covermode=atomic
+  - go test -coverprofile=../coverage.txt -covermode=atomic
+  - rm -rf $GOPATH/src/github.com/gurupras/phonelab_backend/
+  - cd ..
 
 after_success:
   - bash <(curl -s https://codecov.io/bash)
