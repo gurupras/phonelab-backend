@@ -123,19 +123,20 @@ func HandleUpload(input io.Reader, work *Work, workChannel chan *Work, stagingCo
 	if errs, fail = RunStagingProcesses(stagingConfig.PreProcessing, work); len(errs) > 0 && fail {
 		err = errors.New(fmt.Sprintf("Stopping HandleUpload due to fail condition...\nerrors:\n%v\n", errs))
 		return
+	} else if len(errs) > 0 {
+		fmt.Fprintln(os.Stderr, errs)
 	}
 
 	fstruct, err := gocommons.Open(work.StagingFileName, os.O_APPEND|os.O_WRONLY, gocommons.GZ_TRUE)
 	if err != nil {
-		panic("Could not open tempfile")
+		err = errors.New(fmt.Sprintf("Could not open tempfile: %v", err))
+		return
 	}
 
 	fstruct.Seek(0, os.SEEK_END)
 
-	writer, err := fstruct.Writer(0)
-	if err != nil {
-		panic("Could not get writer to tempfile")
-	}
+	// Cannot fail unless the file somehow changed to RDONLY between opening and this statement
+	writer, _ := fstruct.Writer(0)
 
 	// Do the payload copy
 	// The stream is already compressed
@@ -148,8 +149,10 @@ func HandleUpload(input io.Reader, work *Work, workChannel chan *Work, stagingCo
 	} else {
 		inputReader = compressedInput
 	}
+
+	// Cannot fail unless we somehow run out of disk space during the copy
 	if bytesWritten, err = io.Copy(&writer, inputReader); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to copy input to:", work.StagingFileName, err)
+		err = errors.New(fmt.Sprintf("Failed to copy input to %v: %v", work.StagingFileName, err))
 		return
 	}
 	// We want to flush/close before post processing. So do that now
@@ -160,6 +163,8 @@ func HandleUpload(input io.Reader, work *Work, workChannel chan *Work, stagingCo
 	if errs, fail = RunStagingProcesses(stagingConfig.PostProcessing, work); len(errs) > 0 && fail {
 		err = errors.New(fmt.Sprintf("Stopping HandleUpload due to fail condition...\nerrors:\n%v\n", errs))
 		return
+	} else if len(errs) > 0 {
+		fmt.Fprintln(os.Stderr, errs)
 	}
 
 	workChannel <- work
