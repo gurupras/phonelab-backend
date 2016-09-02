@@ -43,6 +43,20 @@ func Recover(name string) {
 	}
 }
 
+func Upload(port int, deviceId string, payload string) (gorequest.Response, string, []error) {
+	baseUrl := fmt.Sprintf("http://localhost:%d/uploader", port)
+	version := "2.0.1"
+	packageName := "edu.buffalo.cse.phonelab.conductor.tasks.LogcatTask"
+	fileName := "logger.out"
+	url := fmt.Sprintf("%s/%s/%s/%s/%s", baseUrl, version, deviceId, packageName, fileName)
+
+	return gorequest.New().Post(url).
+		Set("Content-Length", fmt.Sprintf("%v", len(payload))).
+		Set("Content-Type", "application/x-www-form-urlencoded").
+		Send(payload).
+		End()
+}
+
 func DataGenerator(channel chan string, stop chan interface{}) {
 	var shouldStop bool = false
 
@@ -134,12 +148,6 @@ func DeviceDataGenerator(deviceId string, port int, commChannel chan interface{}
 	// Start the data generator
 	go DataGenerator(logChannel, dataQuitChannel)
 
-	baseUrl := fmt.Sprintf("http://localhost:%d/uploader", port)
-	version := "2.0.1"
-	packageName := "edu.buffalo.cse.phonelab.conductor.tasks.LogcatTask"
-	fileName := "logger.out"
-	url := fmt.Sprintf("%s/%s/%s/%s/%s", baseUrl, version, deviceId, packageName, fileName)
-	logger.Debug("URL:", url)
 	// Now collect lines, package them into 'files'
 	// and ship them via POST
 
@@ -177,11 +185,7 @@ func DeviceDataGenerator(deviceId string, port int, commChannel chan interface{}
 
 			commChannel <- PENDING
 			// Send back any data you want to
-			resp, body, err := gorequest.New().Post(url).
-				Set("Content-Length", fmt.Sprintf("%v", len(file.String()))).
-				Set("Content-Type", "application/x-www-form-urlencoded").
-				Send(file.String()).
-				End()
+			resp, body, err := Upload(port, deviceId, file.String())
 
 			_ = resp
 			_ = body
@@ -197,7 +201,7 @@ func DeviceDataGenerator(deviceId string, port int, commChannel chan interface{}
 				}
 			}
 			if resp.StatusCode != 200 {
-				logger.Error("Error while doing POST")
+				logger.Error("Error while doing POST:", body)
 			}
 
 			logger.Debug(fmt.Sprintf("%s: Sent file of size: %d bytes", deviceId, currentSize))
