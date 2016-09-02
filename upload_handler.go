@@ -51,10 +51,9 @@ func UpdateStagingMetadata(work *Work) (err error, fail bool) {
 	fstruct.Seek(0, os.SEEK_END)
 
 	// We first write all the metadata
-	if writer, err = fstruct.Writer(0); err != nil {
-		err = errors.New(fmt.Sprintf("Could not get writer to tempfile: %v", err))
-		return
-	}
+	// This cannot fail since we have opened the file with write permissions
+	writer, _ = fstruct.Writer(0)
+
 	defer writer.Close()
 	defer writer.Flush()
 
@@ -64,6 +63,7 @@ func UpdateStagingMetadata(work *Work) (err error, fail bool) {
 	compressedWriter.Flush()
 	compressedWriter.Close()
 
+	// Only case in which this can fail is if we somehow run out of disk space
 	if n, err = io.Copy(&writer, metadataBuf); err != nil {
 		err = errors.New(fmt.Sprintf("Failed to write metadata to %v: %v", work.StagingFileName, err))
 		return
