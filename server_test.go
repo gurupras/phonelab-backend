@@ -69,8 +69,15 @@ func TestSetupServer(t *testing.T) {
 	assert.True(server != nil, "Server was not created despite valid port")
 	assert.True(err == nil, "Error on valid port")
 
-	// Test server without logger for converage
+	// Test with initialized config.WorkChannel
+	config.WorkChannel = make(chan *phonelab_backend.Work)
 	server, err = phonelab_backend.SetupServer(14113, config, true)
+	assert.True(server != nil, "Server was not created despite valid port")
+	assert.True(err == nil, "Error on valid port")
+	config.WorkChannel = nil
+
+	// Test server without logger for converage
+	server, err = phonelab_backend.SetupServer(14114, config, true)
 	assert.True(server != nil, "Server was not created despite valid port")
 	assert.True(err == nil, "Error on valid port")
 }
