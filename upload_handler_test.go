@@ -1,11 +1,15 @@
 package phonelab_backend_test
 
 import (
+	"errors"
+	"io/ioutil"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/gurupras/gocommons"
 	"github.com/gurupras/phonelab_backend"
 	"github.com/stretchr/testify/assert"
 )
@@ -157,6 +161,112 @@ func TestLoadCapability(t *testing.T) {
 	//TODO: Server stop logic
 	server.Stop()
 	//cleanup()
+}
+
+func TestUpdateStagingMetadata(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+
+	var err error
+	var stagingDir string
+
+	defer Recover("TestUpdateStagingMetadata")
+
+	// UpdateStagingMetadata requires a work struct to be passed in.
+	// In particular, Work.StagingFileName. So go ahead and carete one.
+	work := new(phonelab_backend.Work)
+
+	stagingDir, err = ioutil.TempDir(testDirBase, "staging-")
+	assert.Nil(err, "Failed to create staging dir", err)
+
+	var file *os.File
+	file, err = ioutil.TempFile(stagingDir, "updateStagingMetadata-")
+	assert.Nil(err, "Failed to create temporary staging file", err)
+	file.Close()
+	os.Remove(file.Name())
+
+	work.StagingFileName = file.Name()
+
+	// Now, create this file and make it read only so UpdateStagingMetadata will fail
+	file, err = os.OpenFile(work.StagingFileName, os.O_CREATE|os.O_RDONLY, 0400)
+	assert.Nil(err, "Failed to create staging file", err)
+	file.Close()
+	err, _ = phonelab_backend.UpdateStagingMetadata(work)
+	assert.NotNil(err, "Should've failed with read only file")
+	os.Remove(file.Name())
+
+	file, err = os.OpenFile(work.StagingFileName, os.O_CREATE|os.O_RDWR, 0644)
+	assert.Nil(err, "Failed to create staging file", err)
+	file.Close()
+	err, _ = phonelab_backend.UpdateStagingMetadata(work)
+	assert.Nil(err, "Failed with valid arguments:", err)
+}
+
+func TestRunStagingProcesses(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+
+	errNoFail := func(work *phonelab_backend.Work) (err error, fail bool) {
+		fail = false
+		err = errors.New("Expected")
+		return
+	}
+
+	errAndFail := func(work *phonelab_backend.Work) (err error, fail bool) {
+		fail = true
+		err = errors.New("Expected")
+		return
+	}
+
+	var processes []phonelab_backend.StagingProcess
+	var errs []error
+	var fail bool
+	// First do no failure condition
+	processes = []phonelab_backend.StagingProcess{errNoFail}
+	errs, fail = phonelab_backend.RunStagingProcesses(processes, nil)
+	assert.Equal(1, len(errs), "Should have got one error")
+	assert.False(fail, "Should have been false")
+
+	// Just for completeness, do multiple processes
+	processes = []phonelab_backend.StagingProcess{errNoFail, errNoFail}
+	errs, fail = phonelab_backend.RunStagingProcesses(processes, nil)
+	assert.Equal(2, len(errs), "Should have got two errors")
+	assert.False(fail, "Should have been false")
+
+	// Now, do the failure condition
+	processes = []phonelab_backend.StagingProcess{errAndFail}
+	errs, fail = phonelab_backend.RunStagingProcesses(processes, nil)
+	assert.Equal(1, len(errs), "Should have got one error")
+	assert.True(fail, "Should have been true")
+
+	// Now, multiple
+	processes = []phonelab_backend.StagingProcess{errNoFail, errAndFail}
+	errs, fail = phonelab_backend.RunStagingProcesses(processes, nil)
+	assert.Equal(2, len(errs), "Should have got two errors")
+	assert.True(fail, "Should have been true")
+
+	processes = []phonelab_backend.StagingProcess{errAndFail, errNoFail}
+	errs, fail = phonelab_backend.RunStagingProcesses(processes, nil)
+	assert.Equal(1, len(errs), "Should have got one error")
+	assert.True(fail, "Should have been true")
+}
+
+func TestCreateStagingFile(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+
+	var stagingDir string
+	var err error
+
+	stagingDir, err = ioutil.TempDir(testDirBase, "staging-")
+	assert.Nil(err, "Failed to create staging dir", err)
+	gocommons.Makedirs(stagingDir)
+	os.Chmod(stagingDir, 0555)
+
+	work := new(phonelab_backend.Work)
+	work.StagingDir = stagingDir
+	err, _ = phonelab_backend.CreateStagingFile(work)
+	assert.NotNil(err, "Should have failed to create file inside read only directory")
 }
 
 func TestAddStagingMetadata(t *testing.T) {
