@@ -119,6 +119,7 @@ func MakeStagedFileReadOnly(work *Work) (err error, fail bool) {
 func HandleUpload(input io.Reader, work *Work, workChannel chan *Work, stagingConfig *StagingConfig) (bytesWritten int64, err error) {
 	var fail bool
 	var errs []error
+
 	if errs, fail = RunStagingProcesses(stagingConfig.PreProcessing, work); len(errs) > 0 && fail {
 		err = errors.New(fmt.Sprintf("Stopping HandleUpload due to fail condition...\nerrors:\n%v\n", errs))
 		return
