@@ -42,7 +42,8 @@ func UpdateStagingMetadata(work *Work) (err error, fail bool) {
 
 	// The stream is already compressed
 	if fstruct, err = gocommons.Open(work.StagingFileName, os.O_APPEND|os.O_WRONLY, gocommons.GZ_FALSE); err != nil {
-		panic("Could not open tempfile")
+		err = errors.New(fmt.Sprintf("Could not open tempfile: %v", err))
+		return
 	}
 	defer fstruct.Close()
 
@@ -51,7 +52,8 @@ func UpdateStagingMetadata(work *Work) (err error, fail bool) {
 
 	// We first write all the metadata
 	if writer, err = fstruct.Writer(0); err != nil {
-		panic("Could not get writer to tempfile")
+		err = errors.New(fmt.Sprintf("Could not get writer to tempfile: %v", err))
+		return
 	}
 	defer writer.Close()
 	defer writer.Flush()
@@ -63,7 +65,7 @@ func UpdateStagingMetadata(work *Work) (err error, fail bool) {
 	compressedWriter.Close()
 
 	if n, err = io.Copy(&writer, metadataBuf); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to write metadata to:", work.StagingFileName)
+		err = errors.New(fmt.Sprintf("Failed to write metadata to %v: %v", work.StagingFileName, err))
 		return
 	}
 	_ = n
