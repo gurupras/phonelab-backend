@@ -264,7 +264,7 @@ func TestHandleUploaderPost(t *testing.T) {
 
 	config := new(phonelab_backend.Config)
 
-	config.OutDir, err = ioutil.TempDir(testDirBase, "staging-")
+	config.StagingDir, err = ioutil.TempDir(testDirBase, "staging-")
 	assert.Nil(err, "Failed to create temporary staging dir")
 
 	config.OutDir, err = ioutil.TempDir(testDirBase, "outdir-")
@@ -284,6 +284,12 @@ func TestHandleUploaderPost(t *testing.T) {
 	assert.Zero(len(errs), "Failed to upload data to server:", errs)
 	assert.NotEqual(200, resp.StatusCode, "Should have received code other than 200")
 	server.Stop()
+	cleanup(config.StagingDir, config.OutDir)
+
+	err = gocommons.Makedirs(config.StagingDir)
+	assert.Nil(err, "Failed to create staging dir")
+	err = gocommons.Makedirs(config.OutDir)
+	assert.Nil(err, "Failed to create out dir")
 
 	// Now, test success
 	config.StagingConfig = phonelab_backend.InitializeStagingConfig()
