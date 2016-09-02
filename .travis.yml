@@ -16,9 +16,9 @@ before_install:
 script:
   - git log --oneline | head -n 1
   - mkdir $HOME/copy
-  - rsync -avzupr ./ $HOME/copy/
+  - rsync -azpr ./ $HOME/copy/
   - go test -coverprofile=$HOME/copy/coverage.txt -covermode=atomic
-  - rm -rf $GOPATH/src/github.com/gurupras/phonelab_backend/
+  - rm -rf $GOPATH/src/github.com/gurupras/phonelab_backend
   - cd $HOME/copy
 
 after_success:
