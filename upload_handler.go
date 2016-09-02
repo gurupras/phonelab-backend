@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -94,22 +93,14 @@ func CreateStagingFile(work *Work) (err error, fail bool) {
 	var file *os.File
 
 	gocommons.Makedirs(work.StagingDir)
-	if file, err = ioutil.TempFile(work.StagingDir, "log-"); err != nil {
+	if file, err = gocommons.TempFile(work.StagingDir, "log-", ".gz"); err != nil {
 		err = errors.New(fmt.Sprintf("Failed to create temporary file: %v", err))
-		return
-	}
-	file.Close()
-	os.Remove(file.Name())
-
-	path := file.Name() + ".gz"
-	if file, err = os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0644); err != nil {
-		err = errors.New(fmt.Sprintf("Failed to create temporary file with .gz extension: %v", err))
 		return
 	}
 	file.Close()
 
 	// Now do the staging part
-	work.StagingFileName = path
+	work.StagingFileName = file.Name()
 	return
 }
 
