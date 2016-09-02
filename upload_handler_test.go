@@ -254,6 +254,56 @@ func TestHandleUpload(t *testing.T) {
 
 }
 
+func TestHandleUploaderPost(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+
+	var err error
+	var port int = 11781
+	var server *phonelab_backend.Server
+
+	config := new(phonelab_backend.Config)
+
+	config.OutDir, err = ioutil.TempDir(testDirBase, "staging-")
+	assert.Nil(err, "Failed to create temporary staging dir")
+
+	config.OutDir, err = ioutil.TempDir(testDirBase, "outdir-")
+	assert.Nil(err, "Failed to create temporary outdir")
+
+	// First, test fail condition
+	config.StagingConfig = new(phonelab_backend.StagingConfig)
+	config.StagingConfig.PreProcessing = append(config.StagingConfig.PreProcessing, errAndFail)
+
+	server, err = phonelab_backend.SetupServer(port, config, true)
+	assert.Nil(err, "Failed to start server:", err)
+
+	go server.Run()
+
+	// Now we upload something that we know will cause an error
+	resp, _, errs := Upload(port, "dummy-device", "hello")
+	assert.Zero(len(errs), "Failed to upload data to server:", errs)
+	assert.NotEqual(200, resp.StatusCode, "Should have received code other than 200")
+	server.Stop()
+
+	// Now, test success
+	config.StagingConfig = phonelab_backend.InitializeStagingConfig()
+	config.ProcessingConfig = phonelab_backend.InitializeProcessingConfig()
+	port++
+	server, err = phonelab_backend.SetupServer(port, config, true)
+	go server.Run()
+
+	buf := new(bytes.Buffer)
+	compressedWriter := gzip.NewWriter(buf)
+	compressedWriter.Write([]byte("Hello"))
+	compressedWriter.Flush()
+	compressedWriter.Close()
+
+	resp, _, errs = Upload(port, "dummy-device", buf.String())
+	assert.Equal(200, resp.StatusCode, "Should have received code 200")
+	server.Stop()
+	cleanup(config.StagingDir, config.OutDir)
+}
+
 func TestUpload(t *testing.T) {
 	t.Parallel()
 
