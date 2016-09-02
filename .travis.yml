@@ -11,7 +11,7 @@ cache:
     - $GOPATH/pkg
 
 before_install:
-  - go get -t -v ./...
+  - go get -t -v -u ./...
 
 script:
   - git log --oneline | head -n 1
