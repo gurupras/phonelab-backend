@@ -400,7 +400,7 @@ func TestDeviceDataGeneratorCompression(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	logger = logrus.New()
-	logger.Level = logrus.InfoLevel
+	logger.Level = logrus.DebugLevel
 
 	if strings.Compare(testDirBase, "") == 0 {
 		testDirBase = "/tmp"
