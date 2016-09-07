@@ -191,7 +191,7 @@ func TestMakeStagedFilesPending(t *testing.T) {
 
 	// Run the test a few times to make sure it works every time
 	var (
-		numIterations int = 10
+		numIterations int = 3
 		nDevices      int = 5
 		startPort     int = 9200
 	)
