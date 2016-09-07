@@ -64,6 +64,7 @@ func SetupServer(port int, config *Config, useLogger bool) (server *Server, err 
 	if useLogger {
 		server.Use(middleware.Logger())
 	}
+	//server.Use(middleware.Gzip())
 
 	if config.WorkChannel == nil {
 		config.WorkChannel = make(chan *Work, 1000)

@@ -11,6 +11,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/gurupras/gocommons"
+	"github.com/gurupras/gocommons/seekable_stream"
 )
 
 type Work struct {
@@ -22,6 +23,8 @@ type Work struct {
 	StagingFileName string
 	StagingDir      string
 	OutDir          string
+	DataStream      *seekable_stream.SeekableStream
+	DataLength      int
 }
 
 type Config struct {

@@ -17,7 +17,7 @@ func TestDeviceWorkHandler(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
-	defer Recover("TestDeviceWorkHandler")
+	defer Recover("TestDeviceWorkHandler", assert)
 
 	statusChannel := make(chan string)
 	channel := make(chan *phonelab_backend.Work)
@@ -60,7 +60,7 @@ func TestPendingWorkHandler(t *testing.T) {
 	var err error
 	assert := assert.New(t)
 
-	defer Recover("TestPendingWorkHandler")
+	defer Recover("TestPendingWorkHandler", assert)
 
 	// XXX: What is this first part testing?
 	config := new(phonelab_backend.Config)
@@ -169,7 +169,7 @@ func TestMakeStagedFilesPending(t *testing.T) {
 	var err error
 	assert := assert.New(t)
 
-	defer Recover("TestMakeStagedFilesPending")
+	defer Recover("TestMakeStagedFilesPending", assert)
 
 	stagingDirBase := filepath.Join(testDirBase, "staging-makestagedfilespending")
 	outDirBase := filepath.Join(testDirBase, "out-makestagedfilespending")
@@ -211,7 +211,7 @@ func TestMakeStagedFilesPending(t *testing.T) {
 	iterFn := func(idx int) {
 		defer iterWg.Done()
 
-		defer Recover(fmt.Sprintf("TestMakeStagedFilesPending-%d", idx))
+		defer Recover(fmt.Sprintf("TestMakeStagedFilesPending-%d", idx), assert)
 
 		var nFilesPerDevice int = 3 + rand.Intn(3) // [3,5]
 		var server *phonelab_backend.Server

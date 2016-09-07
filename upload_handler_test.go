@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gurupras/gocommons"
+	"github.com/gurupras/gocommons/seekable_stream"
 	"github.com/gurupras/phonelab_backend"
 	"github.com/stretchr/testify/assert"
 )
@@ -35,7 +36,7 @@ func TestStaging(t *testing.T) {
 	var server *phonelab_backend.Server
 	assert := assert.New(t)
 
-	defer Recover("TestStaging")
+	defer Recover("TestStaging", assert)
 
 	dummyWork := func(work *phonelab_backend.DeviceWork, processingConfig *phonelab_backend.ProcessingConfig) (err error) {
 		// Dummy work function. We're only testing whether server
@@ -62,6 +63,8 @@ func TestMakeStagedFileReadOnly(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
+	defer Recover("TestMakeStagedFilesPending", assert)
+
 	work := new(phonelab_backend.Work)
 	work.StagingFileName = "/tmp/thisfiledoesnotexist"
 	err, _ := phonelab_backend.MakeStagedFileReadOnly(work)
@@ -72,10 +75,14 @@ func TestUpdateStagingMetadata(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
+	defer Recover("TestUpdateStagingMetadata", assert)
+
+	t.Skip("Skipping until logic for dates is added")
+
 	var err error
 	var stagingDir string
 
-	defer Recover("TestUpdateStagingMetadata")
+	defer Recover("TestUpdateStagingMetadata", assert)
 
 	// UpdateStagingMetadata requires a work struct to be passed in.
 	// In particular, Work.StagingFileName. So go ahead and carete one.
@@ -110,6 +117,8 @@ func TestUpdateStagingMetadata(t *testing.T) {
 func TestRunStagingProcesses(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
+
+	defer Recover("TestRunStagingProcesses", assert)
 
 	var processes []phonelab_backend.StagingProcess
 	var errs []error
@@ -148,6 +157,8 @@ func TestCreateStagingFile(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
+	defer Recover("TestCreateStagingFile", assert)
+
 	var stagingDir string
 	var err error
 
@@ -166,7 +177,7 @@ func TestAddStagingMetadata(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
-	defer Recover("TestAddStagingMetadata")
+	defer Recover("TestAddStagingMetadata", assert)
 
 	stagingDirBase := filepath.Join(testDirBase, "staging-test-add-metadata/")
 	outDirBase := filepath.Join(testDirBase, "out-test-add-metadata/")
@@ -195,12 +206,27 @@ func TestHandleUpload(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
+	defer Recover("TestHandleUpload", assert)
+
 	var err error
 	var file *os.File
+	file, err = gocommons.TempFile(testDirBase, "staging-", ".txt")
+	assert.Nil(err, "Failed to create temporary file:", err)
+	file.Close()
+
 	work := new(phonelab_backend.Work)
 
+	var stagingConfig *phonelab_backend.StagingConfig
+
+	compressedBuf := new(bytes.Buffer)
+	writer := gzip.NewWriter(compressedBuf)
+	writer.Write([]byte("Hello, world!"))
+	writer.Flush()
+	writer.Close()
+	compressedBytes := compressedBuf.Bytes()
+
 	// First, fail pre-processing
-	stagingConfig := new(phonelab_backend.StagingConfig)
+	stagingConfig = new(phonelab_backend.StagingConfig)
 	stagingConfig.PreProcessing = append(stagingConfig.PreProcessing, errNoFail)
 	stagingConfig.PreProcessing = append(stagingConfig.PreProcessing, errAndFail)
 
@@ -215,27 +241,23 @@ func TestHandleUpload(t *testing.T) {
 	// Core processing will still fail.
 	assert.NotNil(err, "Should have errored")
 	stagingConfig.PreProcessing = stagingConfig.PreProcessing[:0]
-
 	// TODO: Now, fail core
 
+	stagingConfig = new(phonelab_backend.StagingConfig)
 	uncompressedBuf := new(bytes.Buffer)
 	uncompressedBuf.WriteString("Hello, world!")
+	work.DataStream = new(seekable_stream.SeekableStream)
+	work.DataStream.WrapReader(uncompressedBuf)
 
 	work.StagingFileName = "/tmp/doesnotexist"
 	_, err = phonelab_backend.HandleUpload(uncompressedBuf, work, nil, stagingConfig)
 	assert.NotNil(err, "Should have failed on non-existent file")
 
 	// Now, fail post-processing
-	file, err = gocommons.TempFile(testDirBase, "staging-", ".txt")
-	assert.Nil(err, "Failed to create temporary file:", err)
-	file.Close()
 	work.StagingFileName = file.Name()
 
-	compressedBuf := new(bytes.Buffer)
-	writer := gzip.NewWriter(compressedBuf)
-	writer.Write([]byte("Hello, world!"))
-	writer.Flush()
-	writer.Close()
+	work.DataStream = new(seekable_stream.SeekableStream)
+	work.DataStream.WrapBytes(compressedBytes)
 
 	stagingConfig = new(phonelab_backend.StagingConfig)
 	stagingConfig.PostProcessing = append(stagingConfig.PostProcessing, errNoFail)
@@ -248,6 +270,11 @@ func TestHandleUpload(t *testing.T) {
 	stagingConfig.PostProcessing = append(stagingConfig.PostProcessing, errNoFail)
 	stagingConfig.PostProcessing = append(stagingConfig.PostProcessing, errNoFail)
 	dummyWorkChannel := make(chan *phonelab_backend.Work, 1000)
+
+	work.StagingFileName = file.Name()
+	work.DataStream = new(seekable_stream.SeekableStream)
+	work.DataStream.WrapBytes(compressedBytes)
+
 	_, err = phonelab_backend.HandleUpload(compressedBuf, work, dummyWorkChannel, stagingConfig)
 	assert.Nil(err, "Should not have errored")
 	stagingConfig.PostProcessing = stagingConfig.PostProcessing[:0]
@@ -257,6 +284,8 @@ func TestHandleUpload(t *testing.T) {
 func TestHandleUploaderPost(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
+
+	defer Recover("TestHandleUploaderPost", assert)
 
 	var err error
 	var port int = 11781
@@ -279,7 +308,7 @@ func TestHandleUploaderPost(t *testing.T) {
 
 	go server.Run()
 
-	// Now we upload something that we know will cause an error
+	// Now we upload something that we know will cause an error..uncompressed
 	resp, _, errs := Upload(port, "dummy-device", "hello")
 	assert.Zero(len(errs), "Failed to upload data to server:", errs)
 	assert.NotEqual(200, resp.StatusCode, "Should have received code other than 200")
@@ -315,10 +344,12 @@ func TestUpload(t *testing.T) {
 
 	assert := assert.New(t)
 
+	defer Recover("TestUpload", assert)
+
 	var port int = 8084
 	var server *phonelab_backend.Server
 
-	defer Recover("TestUpload")
+	defer Recover("TestUpload", assert)
 
 	config := new(phonelab_backend.Config)
 
@@ -343,14 +374,16 @@ func TestUpload(t *testing.T) {
 func TestLoadCapability(t *testing.T) {
 	t.Parallel()
 
-	t.Skip("TestLoadCapability: Skipping until logic for evaluating output is decided")
-
 	assert := assert.New(t)
+
+	defer Recover("TestLoadCapability", assert)
+
+	t.Skip("TestLoadCapability: Skipping until logic for evaluating output is decided")
 
 	var port int = 8085
 	var server *phonelab_backend.Server
 
-	defer Recover("TestLoadCapability")
+	defer Recover("TestLoadCapability", assert)
 
 	config := new(phonelab_backend.Config)
 	config.WorkChannel = make(chan *phonelab_backend.Work, 1000)

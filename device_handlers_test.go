@@ -21,7 +21,7 @@ func TestProcessStagedWork(t *testing.T) {
 
 	var err error
 
-	defer Recover("TestProcessStagedWork")
+	defer Recover("TestProcessStagedWork", assert)
 
 	processingConfig := new(phonelab_backend.ProcessingConfig)
 
@@ -130,7 +130,7 @@ func TestOpenFileAndReader(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
-	defer Recover("TestOpenFileAndReader")
+	defer Recover("TestOpenFileAndReader", assert)
 
 	var fstruct *gocommons.File
 	var reader *bufio.Scanner

@@ -18,7 +18,7 @@ func GenerateRandomLogline(bootId string, timeOffset int64, tokenNumber int64) s
 	tokens = append(tokens, bootId)
 
 	timeNow := time.Now()
-	tokens = append(tokens, fmt.Sprintf("%s.%d", strftime.Format("%Y-%m-%d %H:%M:%S", timeNow), timeNow.Nanosecond()))
+	tokens = append(tokens, fmt.Sprintf("%s.%09d", strftime.Format("%Y-%m-%d %H:%M:%S", timeNow), timeNow.Nanosecond()))
 
 	tokens = append(tokens, fmt.Sprintf("%v", tokenNumber))
 
@@ -53,7 +53,7 @@ func TestCheckLogcatPattern(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
-	defer Recover("TestCheckLogcatPattern")
+	defer Recover("TestCheckLogcatPattern", assert)
 
 	// Empty string
 	line := ""

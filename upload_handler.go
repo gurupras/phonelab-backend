@@ -1,6 +1,7 @@
 package phonelab_backend
 
 import (
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"errors"
@@ -11,8 +12,12 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/fatih/set"
 	"github.com/gurupras/gocommons"
+	"github.com/gurupras/gocommons/seekable_stream"
+	"github.com/jehiah/go-strftime"
 	"github.com/labstack/echo"
+	"github.com/pbnjay/strptime"
 )
 
 type StagingProcess func(work *Work) (error, bool)
@@ -58,7 +63,13 @@ func UpdateStagingMetadata(work *Work) (err error, fail bool) {
 
 	metadataBuf := new(bytes.Buffer)
 	compressedWriter := gzip.NewWriter(metadataBuf)
-	WriteStagingMetadata(compressedWriter, work)
+	metadata := WorkToStagingMetadata(work)
+	if err = UpdateStagingMetadataDates(metadata, work); err != nil {
+		err = errors.New(fmt.Sprintf("Failed to obtain dates for metadata: %v: %v", work.StagingFileName, err))
+		return
+	}
+
+	WriteStagingMetadata(compressedWriter, metadata)
 	compressedWriter.Flush()
 	compressedWriter.Close()
 
@@ -69,6 +80,52 @@ func UpdateStagingMetadata(work *Work) (err error, fail bool) {
 	}
 	_ = n
 	//fmt.Println(fmt.Sprintf("Wrote %d bytes", n))
+	return
+}
+
+func UpdateStagingMetadataDates(metadata *StagingMetadata, work *Work) (err error) {
+	// We need to:
+	//   1) Copy entire DataStream into another stream and update work.DataStream
+	//   2) Read stream and find set of all dates in use
+	//   3) Reset stream
+	// Step (1) is needed since io.Reader has no reset. Once we read it, we've consumed it.
+	// Therefore, we need to read it, and write it into a buffer and then use this buffer
+	// for all other processing
+	var reader io.Reader
+	var compressedReader *gzip.Reader
+	if compressedReader, err = gzip.NewReader(work.DataStream); err != nil {
+		//err = errors.New(fmt.Sprintf("Failed to obtain compressed reader to work.DataStream: %v", err))
+		err = nil
+		reader = work.DataStream
+	} else {
+		reader = compressedReader
+	}
+
+	scanner := bufio.NewScanner(reader)
+	scanner.Split(bufio.ScanLines)
+
+	set := set.NewNonTS()
+	for scanner.Scan() {
+		line := scanner.Text()
+		logline := ParseLogline(line)
+		if logline == nil {
+			// Weird...
+			continue
+		}
+		var dt time.Time
+		dt, err = strptime.Parse(strftime.Format("%Y-%m-%d", logline.Datetime), "%Y-%m-%d")
+		if err != nil {
+			err = errors.New(fmt.Sprintf("Failed to get datetime of line: %v: %v", line, err))
+			return err
+		}
+		set.Add(dt)
+	}
+	for _, data := range set.List() {
+		dt := data.(time.Time)
+		metadata.Dates = append(metadata.Dates, dt)
+	}
+
+	work.DataStream.Rewind()
 	return
 }
 
@@ -129,7 +186,7 @@ func HandleUpload(input io.Reader, work *Work, workChannel chan *Work, stagingCo
 
 	fstruct, err := gocommons.Open(work.StagingFileName, os.O_APPEND|os.O_WRONLY, gocommons.GZ_TRUE)
 	if err != nil {
-		err = errors.New(fmt.Sprintf("Could not open tempfile: %v", err))
+		err = errors.New(fmt.Sprintf("Could not open tempfile: %v: %v", work.StagingFileName, err))
 		return
 	}
 
@@ -143,9 +200,12 @@ func HandleUpload(input io.Reader, work *Work, workChannel chan *Work, stagingCo
 	var compressedInput *gzip.Reader
 	var inputReader io.Reader
 
-	if compressedInput, err = gzip.NewReader(input); err != nil {
+	if compressedInput, err = gzip.NewReader(work.DataStream); err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to get gzip.Reader to input:", err)
-		inputReader = input
+		sample := make([]byte, 1024)
+		work.DataStream.Read(sample)
+		fmt.Println(string(sample))
+		inputReader = work.DataStream
 	} else {
 		inputReader = compressedInput
 	}
@@ -188,6 +248,9 @@ func HandleUploaderPost(c echo.Context, config *Config) (err error) {
 
 	// The body is a compressed stream represented by io.Reader
 	body := c.Request().Body()
+
+	work.DataStream = new(seekable_stream.SeekableStream)
+	work.DataStream.WrapReader(body)
 
 	work.StagingDir = filepath.Join(config.StagingDir, deviceId)
 	work.OutDir = filepath.Join(config.OutDir, deviceId)

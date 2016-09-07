@@ -37,9 +37,13 @@ const (
 	PENDING int = iota
 )
 
-func Recover(name string) {
+func Recover(name string, assert *assert.Assertions) {
 	if r := recover(); r != nil {
-		logger.Error(fmt.Sprintf("%s: FAILED\n%s\n%s\n", name, r, debug.Stack()))
+		if assert != nil {
+			assert.Fail("FAILED", r, debug.Stack())
+		} else {
+			logger.Error(fmt.Sprintf("%s: FAILED\n%s\n%s\n", name, r, debug.Stack()))
+		}
 	}
 }
 
@@ -283,7 +287,7 @@ func cleanup(directories ...string) {
 func RunTestServerAsync(port int, config *phonelab_backend.Config, serverPtr **phonelab_backend.Server) {
 
 	var err error
-	defer Recover("RunTestServerAsync")
+	defer Recover("RunTestServerAsync", nil)
 
 	if config == nil {
 		config = &phonelab_backend.Config{}
@@ -338,6 +342,8 @@ func TestDeviceDataGeneratorCompression(t *testing.T) {
 	t.Parallel()
 
 	assert := assert.New(t)
+
+	defer Recover("TestDeviceDataGeneratorCompression", assert)
 
 	var port int = 21356
 	var err error

@@ -26,7 +26,7 @@ func TestWorkToStagingMetadata(t *testing.T) {
 
 	assert := assert.New(t)
 
-	defer Recover("TestWorkToStagingMetadata")
+	defer Recover("TestWorkToStagingMetadata", assert)
 
 	metadata := phonelab_backend.WorkToStagingMetadata(nil)
 	assert.Nil(metadata, "Got metadata from nil work")
@@ -47,7 +47,7 @@ func TestGenerateStagingMetadata(t *testing.T) {
 
 	assert := assert.New(t)
 
-	defer Recover("TestGenerateStagingMetadata")
+	defer Recover("TestGenerateStagingMetadata", assert)
 
 	work := generateFakeWork()
 	metadata = phonelab_backend.GenerateStagingMetadata(work)
@@ -61,7 +61,7 @@ func (dw *DummyWriter) Write([]byte) (n int, err error) {
 	return -1, errors.New("Exected")
 }
 
-func TestWriteStagingMetadata(t *testing.T) {
+func TestWriteWorkAsYamlMetadataBytes(t *testing.T) {
 	t.Parallel()
 
 	var err error
@@ -71,16 +71,16 @@ func TestWriteStagingMetadata(t *testing.T) {
 
 	assert := assert.New(t)
 
-	defer Recover("TestWriteStagingMetadata")
+	defer Recover("TestWriteWorkAsYamlMetadataBytes", assert)
 
 	work = generateFakeWork()
 
-	err = phonelab_backend.WriteStagingMetadata(&buf, work)
+	err = phonelab_backend.WriteWorkAsYamlMetadataBytes(&buf, work)
 	assert.Nil(err, "Error in writing YAML metadata")
 
 	// Force the writer to fail for coverage
 	dw := new(DummyWriter)
-	err = phonelab_backend.WriteStagingMetadata(dw, work)
+	err = phonelab_backend.WriteWorkAsYamlMetadataBytes(dw, work)
 	assert.NotNil(err, "Expected error but got none")
 
 	yamlStruct = phonelab_backend.StagingMetadata{}

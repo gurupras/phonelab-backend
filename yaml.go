@@ -4,15 +4,17 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"time"
 
 	"gopkg.in/yaml.v2"
 )
 
 type StagingMetadata struct {
-	Version         string `yaml:version`
-	DeviceId        string `yaml:device_id`
-	PackageName     string `yaml:package_name`
-	UploadTimestamp int64  `yaml:upload_timestamp`
+	Version         string      `yaml:version`
+	DeviceId        string      `yaml:device_id`
+	PackageName     string      `yaml:package_name`
+	UploadTimestamp int64       `yaml:upload_timestamp`
+	Dates           []time.Time `yaml:dates`
 }
 
 type OutMetadata struct {
@@ -44,7 +46,18 @@ func GenerateStagingMetadata(work *Work) []byte {
 	return metadata
 }
 
-func WriteStagingMetadata(writer io.Writer, work *Work) (err error) {
+func WriteStagingMetadata(writer io.Writer, metadata *StagingMetadata) (err error) {
+	buf := new(bytes.Buffer)
+	metadataBytes, err := yaml.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+	buf.Write(metadataBytes)
+	writer.Write([]byte(fmt.Sprintf("---\n%v---\n", buf.String())))
+	return
+}
+
+func WriteWorkAsYamlMetadataBytes(writer io.Writer, work *Work) (err error) {
 	var metadata []byte
 
 	metadata = GenerateStagingMetadata(work)

@@ -34,7 +34,7 @@ func TestServerConstructor(t *testing.T) {
 	var err error
 	assert := assert.New(t)
 
-	defer Recover("TestServerConstructor")
+	defer Recover("TestServerConstructor", assert)
 
 	server, err = phonelab_backend.New(-1)
 	assert.Nil(server, "Server was created with a negative port")
@@ -57,7 +57,7 @@ func TestSetupServer(t *testing.T) {
 
 	assert := assert.New(t)
 
-	defer Recover("TestSetupServer")
+	defer Recover("TestSetupServer", assert)
 
 	config := new(phonelab_backend.Config)
 
@@ -90,7 +90,7 @@ func TestRunServer(t *testing.T) {
 
 	assert := assert.New(t)
 
-	defer Recover("TestRunServer")
+	defer Recover("TestRunServer", assert)
 
 	var server *phonelab_backend.Server
 	go func() {

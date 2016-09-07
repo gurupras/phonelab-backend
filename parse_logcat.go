@@ -1,6 +1,7 @@
 package phonelab_backend
 
 import (
+	"fmt"
 	"regexp"
 	"strconv"
 	"time"
@@ -41,6 +42,13 @@ var PHONELAB_PATTERN = regexp.MustCompile(`` +
 
 func ParseLogline(line string) *Logline {
 	var err error
+
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println("line:", line)
+			panic(fmt.Sprintf("%v", r))
+		}
+	}()
 
 	names := PATTERN.SubexpNames()
 	values_raw := PATTERN.FindAllStringSubmatch(line, -1)
