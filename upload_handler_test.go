@@ -30,7 +30,7 @@ func errAndFail(work *phonelab_backend.Work) (err error, fail bool) {
 }
 
 func TestStaging(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 
 	var port int = 8083
 	var server *phonelab_backend.Server
@@ -60,7 +60,7 @@ func TestStaging(t *testing.T) {
 }
 
 func TestMakeStagedFileReadOnly(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 	assert := assert.New(t)
 
 	defer Recover("TestMakeStagedFilesPending", assert)
@@ -72,7 +72,7 @@ func TestMakeStagedFileReadOnly(t *testing.T) {
 }
 
 func TestUpdateStagingMetadata(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 	assert := assert.New(t)
 
 	defer Recover("TestUpdateStagingMetadata", assert)
@@ -123,7 +123,7 @@ func TestUpdateStagingMetadata(t *testing.T) {
 }
 
 func TestRunStagingProcesses(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 	assert := assert.New(t)
 
 	defer Recover("TestRunStagingProcesses", assert)
@@ -162,7 +162,7 @@ func TestRunStagingProcesses(t *testing.T) {
 }
 
 func TestCreateStagingFile(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 	assert := assert.New(t)
 
 	defer Recover("TestCreateStagingFile", assert)
@@ -182,7 +182,7 @@ func TestCreateStagingFile(t *testing.T) {
 }
 
 func TestAddStagingMetadata(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 	assert := assert.New(t)
 
 	defer Recover("TestAddStagingMetadata", assert)
@@ -211,7 +211,7 @@ func TestAddStagingMetadata(t *testing.T) {
 }
 
 func TestHandleUpload(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 	assert := assert.New(t)
 
 	defer Recover("TestHandleUpload", assert)
@@ -290,7 +290,7 @@ func TestHandleUpload(t *testing.T) {
 }
 
 func TestHandleUploaderPost(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 	assert := assert.New(t)
 
 	defer Recover("TestHandleUploaderPost", assert)
@@ -348,7 +348,7 @@ func TestHandleUploaderPost(t *testing.T) {
 }
 
 func TestUpload(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 
 	assert := assert.New(t)
 
@@ -380,7 +380,7 @@ func TestUpload(t *testing.T) {
 }
 
 func TestLoadCapability(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 
 	assert := assert.New(t)
 

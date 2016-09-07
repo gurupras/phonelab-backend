@@ -22,7 +22,7 @@ func generateFakeWork() *phonelab_backend.Work {
 }
 
 func TestWorkToStagingMetadata(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 
 	assert := assert.New(t)
 
@@ -41,7 +41,7 @@ func TestWorkToStagingMetadata(t *testing.T) {
 }
 
 func TestGenerateStagingMetadata(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 
 	var metadata []byte
 
@@ -62,7 +62,7 @@ func (dw *DummyWriter) Write([]byte) (n int, err error) {
 }
 
 func TestWriteWorkAsYamlMetadataBytes(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 
 	var err error
 	var work *phonelab_backend.Work

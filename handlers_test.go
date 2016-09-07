@@ -14,7 +14,7 @@ import (
 )
 
 func TestDeviceWorkHandler(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 	assert := assert.New(t)
 
 	defer Recover("TestDeviceWorkHandler", assert)
@@ -56,7 +56,7 @@ func TestDeviceWorkHandler(t *testing.T) {
 }
 
 func TestPendingWorkHandler(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 	var err error
 	assert := assert.New(t)
 
@@ -165,7 +165,7 @@ func TestPendingWorkHandler(t *testing.T) {
 }
 
 func TestMakeStagedFilesPending(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 	var err error
 	assert := assert.New(t)
 

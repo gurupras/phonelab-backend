@@ -16,7 +16,7 @@ import (
 )
 
 func TestProcessStagedWork(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 	assert := assert.New(t)
 
 	var err error
@@ -127,7 +127,7 @@ func TestProcessStagedWork(t *testing.T) {
 }
 
 func TestOpenFileAndReader(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 	assert := assert.New(t)
 
 	defer Recover("TestOpenFileAndReader", assert)
@@ -165,7 +165,7 @@ func TestOpenFileAndReader(t *testing.T) {
 
 /*
 func TestReadFileInReverse(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 
 	assert := assert.New(t)
 
@@ -240,7 +240,7 @@ func TestReadFileInReverse(t *testing.T) {
 
 /*
 func TestAddOutMetadata(t *testing.T) {
-	t.Parallel()
+	//t.Parallel()
 
 	assert := assert.New(t)
 
