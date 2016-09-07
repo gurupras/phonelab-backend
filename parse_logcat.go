@@ -70,10 +70,16 @@ func ParseLogline(line string) *Logline {
 	// Convert values
 	// Some datetimes are 9 digits instead of 6
 	// TODO: Get rid of the last 3
-	datetime, err := strptime.Parse(kv_map["datetime"][:26], "%Y-%m-%d %H:%M:%S.%f")
-	if err != nil {
+	var datetime time.Time
+
+	if len(kv_map["datetime"]) > 26 {
+		kv_map["datetime"] = kv_map["datetime"][:26]
+	}
+
+	if datetime, err = strptime.Parse(kv_map["datetime"][:19], "%Y-%m-%d %H:%M:%S"); err != nil {
 		return nil
 	}
+
 	logcat_token, err := strconv.ParseInt(kv_map["logcat_token"], 0, 64)
 	if err != nil {
 		return nil
