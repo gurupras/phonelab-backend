@@ -24,7 +24,6 @@ type Work struct {
 	StagingDir      string
 	OutDir          string
 	DataStream      *seekable_stream.SeekableStream
-	DataLength      int
 }
 
 type Config struct {
@@ -103,7 +102,7 @@ func MakeStagedFilesPending(config *Config) error {
 		go stagedFileToPendingWork(file)
 	}
 	wg.Wait()
-	fmt.Println(fmt.Sprintf("Staged %s - %d", config.StagingDir, len(files)))
+	//fmt.Println(fmt.Sprintf("Staged %s - %d", config.StagingDir, len(files)))
 	return err
 }
 
@@ -152,7 +151,7 @@ func PendingWorkHandler(config *Config) {
 	for {
 		//fmt.Println("Waiting for work")
 		if work, ok = <-config.WorkChannel; !ok {
-			fmt.Fprintln(os.Stderr, "workChannel closed?")
+			//fmt.Fprintln(os.Stderr, "workChannel closed?")
 			break
 		}
 		//fmt.Println("Got new work")

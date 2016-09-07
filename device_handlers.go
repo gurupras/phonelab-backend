@@ -192,7 +192,7 @@ func UpdateOutFile(work *DeviceWork) (err error, fail bool) {
 	}
 
 	outfile := filepath.Join(work.Work.OutDir, work.BootId+".gz")
-	fmt.Println("outfile:", outfile)
+	//fmt.Println("outfile:", outfile)
 	if work.OutFile, err = gocommons.Open(outfile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, gocommons.GZ_TRUE); err != nil {
 		err = errors.New(fmt.Sprintf("Failed to open output file", err))
 		return

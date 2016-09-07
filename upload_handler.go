@@ -202,9 +202,6 @@ func HandleUpload(input io.Reader, work *Work, workChannel chan *Work, stagingCo
 
 	if compressedInput, err = gzip.NewReader(work.DataStream); err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to get gzip.Reader to input:", err)
-		sample := make([]byte, 1024)
-		work.DataStream.Read(sample)
-		fmt.Println(string(sample))
 		inputReader = work.DataStream
 	} else {
 		inputReader = compressedInput
