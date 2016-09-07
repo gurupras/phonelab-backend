@@ -77,15 +77,13 @@ func TestUpdateStagingMetadata(t *testing.T) {
 
 	defer Recover("TestUpdateStagingMetadata", assert)
 
-	t.Skip("Skipping until logic for dates is added")
-
 	var err error
 	var stagingDir string
 
 	defer Recover("TestUpdateStagingMetadata", assert)
 
 	// UpdateStagingMetadata requires a work struct to be passed in.
-	// In particular, Work.StagingFileName. So go ahead and carete one.
+	// In particular, Work.StagingFileName. So go ahead and create one.
 	work := new(phonelab_backend.Work)
 
 	stagingDir, err = ioutil.TempDir(testDirBase, "staging-")
@@ -98,6 +96,16 @@ func TestUpdateStagingMetadata(t *testing.T) {
 	os.Remove(file.Name())
 
 	work.StagingFileName = file.Name()
+
+	// It also requires Work.DataStream. So add some (compressed) data to it
+	buf := new(bytes.Buffer)
+	gzipWriter := gzip.NewWriter(buf)
+	gzipWriter.Write([]byte("dummy data"))
+	gzipWriter.Flush()
+	gzipWriter.Close()
+
+	work.DataStream = new(seekable_stream.SeekableStream)
+	work.DataStream.WrapBytes(buf.Bytes())
 
 	// Now, create this file and make it read only so UpdateStagingMetadata will fail
 	file, err = os.OpenFile(work.StagingFileName, os.O_CREATE|os.O_RDONLY, 0400)
