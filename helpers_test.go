@@ -55,7 +55,8 @@ func Upload(port int, deviceId string, payload string) (gorequest.Response, stri
 
 	return gorequest.New().Post(url).
 		Set("Content-Length", fmt.Sprintf("%v", len(payload))).
-		Set("Content-Type", "application/x-www-form-urlencoded").
+		Set("Content-Encoding", "gzip").
+		Set("Content-Type", "text/plain").
 		Send(payload).
 		End()
 }
