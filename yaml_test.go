@@ -12,12 +12,11 @@ import (
 )
 
 func generateFakeWork() *phonelab_backend.Work {
-	work := &phonelab_backend.Work{
-		Version:         "1.0",
-		DeviceId:        "dummy",
-		PackageName:     "com.example.test",
-		UploadTimestamp: 14,
-	}
+	work := &phonelab_backend.Work{}
+	work.Version = "1.0"
+	work.DeviceId = "dummy"
+	work.PackageName = "com.example.test"
+	work.UploadTimestamp = 14
 	return work
 }
 

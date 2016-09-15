@@ -3,23 +3,33 @@ package phonelab_backend
 import (
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"gopkg.in/yaml.v2"
 
+	"github.com/fatih/set"
 	"github.com/gurupras/gocommons"
 	"github.com/gurupras/gocommons/seekable_stream"
+	"github.com/pbnjay/strptime"
 )
 
+type UploadMetadata struct {
+	Version         string `yaml:version`
+	DeviceId        string `yaml:device_id`
+	PackageName     string `yaml:package_name`
+	UploadTimestamp int64  `yaml:upload_timestamp`
+	UploadFileName  string
+}
+
 type Work struct {
-	Version         string
-	DeviceId        string
-	PackageName     string
-	LogFileName     string
-	UploadTimestamp int64
+	UploadMetadata
+	StagingMetadata StagingMetadata
 	StagingFileName string
 	StagingDir      string
 	OutDir          string
@@ -87,11 +97,8 @@ func MakeStagedFilesPending(config *Config) error {
 			return
 		}
 		work := &Work{
+			StagingMetadata: stagingMetadata,
 			StagingFileName: filePath,
-			Version:         stagingMetadata.Version,
-			DeviceId:        stagingMetadata.DeviceId,
-			PackageName:     stagingMetadata.PackageName,
-			UploadTimestamp: stagingMetadata.UploadTimestamp,
 			OutDir:          config.OutDir,
 		}
 		config.WorkChannel <- work
@@ -107,21 +114,86 @@ func MakeStagedFilesPending(config *Config) error {
 }
 
 func DeviceWorkHandler(deviceId string, workChannel chan *Work, processingConfig *ProcessingConfig, statusChannel chan string) (err error) {
+	var stop int32 = 0
+
+	if statusChannel != nil {
+		defer close(statusChannel)
+	}
+
+	workSet := set.New()
+
+	if processingConfig == nil {
+		err = errors.New(fmt.Sprintf("Incomplete processingConfig..please make sure all fields are initialized"))
+		return
+	}
+	// Goroutine to go through the set and issue work
+	processWorkSetWg := sync.WaitGroup{}
+	processWorkSetWg.Add(1)
+	go func() {
+		defer processWorkSetWg.Done()
+
+		processWg := sync.WaitGroup{}
+
+		processRoutine := func(work *Work, processingConfig *ProcessingConfig) {
+			defer processWg.Done()
+			ProcessProcessConfig(work, processingConfig)
+		}
+
+		for {
+			if stop != 0 {
+				break
+			}
+			now := time.Now()
+			for _, obj := range workSet.List() {
+				work := obj.(*Work)
+				var mostRecentDate time.Time
+				if mostRecentDate, err = strptime.ParseStrict("1970-01-01", "%Y-%M-%d"); err != nil {
+					err = errors.New(fmt.Sprintf("Failed to initialize mostRecentDate to 1970-01-01: %v", err))
+					return
+				}
+				for _, date := range work.StagingMetadata.Dates {
+					if date.After(mostRecentDate) {
+						mostRecentDate = date
+					}
+				}
+				if now.Sub(mostRecentDate) > processingConfig.DelayBeforeProcessing {
+					workSet.Remove(work)
+					processWg.Add(1)
+					go processRoutine(work, processingConfig)
+				}
+			}
+			time.Sleep(processingConfig.WorkSetCheckPeriod)
+		}
+		//fmt.Println("Waiting for running process handlers to complete...")
+		processWg.Wait()
+	}()
+
 	var work *Work
 	var ok bool
-
 	for {
 		if work, ok = <-workChannel; !ok {
-			if statusChannel != nil {
-				statusChannel <- "DONE"
-			}
 			break
 		}
 
-		if err = ProcessProcessConfig(work, processingConfig); err != nil {
-			fmt.Fprintln(os.Stderr, err)
+		// Just keep appending to an array of work and let the
+		// internal goroutine schedule these when applicable
+		workSet.Add(work)
+	}
+	//XXX: Wait for all work to complete
+	for {
+		size := workSet.Size()
+		if size > 0 {
+			time.Sleep(1 * time.Second)
+		} else {
+			break
 		}
 	}
+	atomic.AddInt32(&stop, 1)
+	processWorkSetWg.Wait()
+	if statusChannel != nil {
+		statusChannel <- "DONE"
+	}
+	//fmt.Println("DeviceWorkHandler - finished")
 	return
 }
 

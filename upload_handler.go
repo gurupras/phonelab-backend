@@ -234,14 +234,13 @@ func HandleUploaderPost(c echo.Context, config *Config) (err error) {
 	packageName := c.P(2)
 	fileName := c.P(3)
 
-	work := &Work{
-		Version:         version,
-		DeviceId:        deviceId,
-		PackageName:     packageName,
-		LogFileName:     fileName,
-		UploadTimestamp: time.Now().UnixNano(),
-		StagingFileName: "", // This is filled in by HandleUpload
-	}
+	work := &Work{}
+	work.UploadFileName = fileName
+	work.Version = version
+	work.DeviceId = deviceId
+	work.PackageName = packageName
+	work.UploadTimestamp = time.Now().UnixNano()
+	work.StagingFileName = "" // This is filled in by HandleUpload
 
 	// The body is a compressed stream represented by io.Reader
 	body := c.Request().Body()

@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"time"
 
 	"github.com/alecthomas/kingpin"
 	"github.com/gurupras/phonelab_backend"
@@ -41,6 +42,11 @@ func Main(args []string) (err error) {
 	config.WorkChannel = make(chan *phonelab_backend.Work, 1000)
 	config.StagingDir = stagingDir
 	config.OutDir = outDir
+
+	config.ProcessingConfig = phonelab_backend.InitializeProcessingConfig()
+	//TODO: These fields should have argument parsing logic
+	config.ProcessingConfig.DelayBeforeProcessing = 48 * time.Hour
+	config.ProcessingConfig.WorkSetCheckPeriod = 15 * time.Minute
 
 	go phonelab_backend.PendingWorkHandler(config)
 	server, err := phonelab_backend.SetupServer(phonelab_backend.Port, config, true)

@@ -10,11 +10,8 @@ import (
 )
 
 type StagingMetadata struct {
-	Version         string      `yaml:version`
-	DeviceId        string      `yaml:device_id`
-	PackageName     string      `yaml:package_name`
-	UploadTimestamp int64       `yaml:upload_timestamp`
-	Dates           []time.Time `yaml:dates`
+	UploadMetadata
+	Dates []time.Time `yaml:dates`
 }
 
 type OutMetadata struct {
@@ -31,12 +28,8 @@ func WorkToStagingMetadata(work *Work) *StagingMetadata {
 		return nil
 	}
 
-	metadata := &StagingMetadata{
-		Version:         work.Version,
-		DeviceId:        work.DeviceId,
-		PackageName:     work.PackageName,
-		UploadTimestamp: work.UploadTimestamp,
-	}
+	metadata := &StagingMetadata{}
+	metadata.UploadMetadata = work.UploadMetadata
 	return metadata
 }
 

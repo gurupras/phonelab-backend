@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v2"
 
@@ -29,9 +30,11 @@ type DeviceWork struct {
 type ProcessingFunction func(work *DeviceWork) (error, bool)
 
 type ProcessingConfig struct {
-	PreProcessing  []ProcessingFunction
-	Core           func(deviceWork *DeviceWork, processingConfig *ProcessingConfig) error
-	PostProcessing []ProcessingFunction
+	PreProcessing         []ProcessingFunction
+	Core                  func(deviceWork *DeviceWork, processingConfig *ProcessingConfig) error
+	PostProcessing        []ProcessingFunction
+	DelayBeforeProcessing time.Duration
+	WorkSetCheckPeriod    time.Duration
 }
 
 func InitializeProcessingConfig() *ProcessingConfig {

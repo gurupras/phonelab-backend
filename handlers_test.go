@@ -19,15 +19,29 @@ func TestDeviceWorkHandler(t *testing.T) {
 
 	defer Recover("TestDeviceWorkHandler", assert)
 
-	statusChannel := make(chan string)
-	channel := make(chan *phonelab_backend.Work)
+	var statusChannel chan string
+	var channel chan *phonelab_backend.Work
+	var processingConfig *phonelab_backend.ProcessingConfig
+	var msg string
+	var ok bool
+
+	statusChannel = make(chan string)
+	channel = make(chan *phonelab_backend.Work)
 	close(channel)
 	go phonelab_backend.DeviceWorkHandler("dummy", channel, nil, statusChannel)
-	msg, ok := <-statusChannel
+	_, ok = <-statusChannel
+	assert.False(ok, "Should have failed with nil processingConfig")
+
+	statusChannel = make(chan string)
+	channel = make(chan *phonelab_backend.Work)
+	close(channel)
+	processingConfig = new(phonelab_backend.ProcessingConfig)
+	processingConfig.WorkSetCheckPeriod = 0 * time.Millisecond
+	processingConfig.DelayBeforeProcessing = 0 * time.Second
+	go phonelab_backend.DeviceWorkHandler("dummy", channel, processingConfig, statusChannel)
+	msg, ok = <-statusChannel
 	assert.True(ok, "Failed to receive status from DeviceWorkHandler")
 	assert.Equal("DONE", msg, "Received invalid message from DeviceWorkHandler:", msg)
-
-	channel = make(chan *phonelab_backend.Work)
 
 	count := 0
 	countMutex := sync.Mutex{}
@@ -39,18 +53,26 @@ func TestDeviceWorkHandler(t *testing.T) {
 		return
 	}
 
-	processingConfig := new(phonelab_backend.ProcessingConfig)
+	processingConfig = new(phonelab_backend.ProcessingConfig)
 	processingConfig.Core = countFn
+	processingConfig.WorkSetCheckPeriod = 0
+	processingConfig.DelayBeforeProcessing = 0
+
+	statusChannel = make(chan string)
+	channel = make(chan *phonelab_backend.Work)
 
 	go phonelab_backend.DeviceWorkHandler("dummy", channel, processingConfig, statusChannel)
 
 	for i := 0; i < 1000; i++ {
-		channel <- &phonelab_backend.Work{}
+		work := new(phonelab_backend.Work)
+		work.DeviceId = "dummy"
+		work.StagingMetadata.Dates = append(work.StagingMetadata.Dates, time.Now())
+		channel <- work
 	}
 
 	close(channel)
 	msg, ok = <-statusChannel
-	assert.Equal(count, 1000, "Did not process all jobs")
+	assert.Equal(1000, count, "Did not process all jobs")
 	assert.True(ok, "Failed to receive status from DeviceWorkHandler")
 	assert.Equal("DONE", msg, "Received invalid message from DeviceWorkHandler:", msg)
 }
@@ -93,6 +115,8 @@ func TestPendingWorkHandler(t *testing.T) {
 	config.WorkChannel = make(chan *phonelab_backend.Work, 1000)
 	config.ProcessingConfig = new(phonelab_backend.ProcessingConfig)
 	config.ProcessingConfig.Core = countFn
+	config.ProcessingConfig.WorkSetCheckPeriod = 100 * time.Millisecond
+	config.ProcessingConfig.DelayBeforeProcessing = 1 * time.Second
 	// We start PendingWorkHandler in a goroutine from which we can signal back that it has returned
 	pendingWorkHandlerDone := make(chan int)
 	go func() {
