@@ -105,10 +105,10 @@ func UpdateStagingMetadataDates(metadata *StagingMetadata, work *Work) (err erro
 	scanner.Split(bufio.ScanLines)
 
 	set := set.NewNonTS()
+	var logline *Logline
 	for scanner.Scan() {
 		line := scanner.Text()
-		logline := ParseLogline(line)
-		if logline == nil {
+		if logline, err = ParseLogline(line); err != nil {
 			// Weird...
 			continue
 		}

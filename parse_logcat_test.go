@@ -55,49 +55,59 @@ func TestCheckLogcatPattern(t *testing.T) {
 
 	defer Recover("TestCheckLogcatPattern", assert)
 
+	var logline *phonelab_backend.Logline
+	var err error
+
 	// Empty string
 	line := ""
-	logline := phonelab_backend.ParseLogline(line)
+	logline, err = phonelab_backend.ParseLogline(line)
 	assert.Nil(logline, "Obtained LogLine from empty string")
+	assert.NotNil(err, "Should have got error")
 
 	// Illegal DatetimeNanos
 	line = "6b793913-7cd9-477a-bbfa-62f07fbac87b 2016-04-21 09:51:01.1990250000000000000000000000000000000000000000000000000638 11553177 [29981.752359]   202   203 D Kernel-Trace:      kworker/1:1-21588 [001] ...2 29981.751893: phonelab_periodic_ctx_switch_info: cpu=1 pid=7641 tgid=7613 nice=0 comm=Binder_1 utime=0 stime=0 rtime=158906 bg_utime=0 bg_stime=0 bg_rtime=0 s_run=0 s_int=2 s_unint=0 s_oth=0 log_idx=79981"
-	logline = phonelab_backend.ParseLogline(line)
+	logline, err = phonelab_backend.ParseLogline(line)
 	assert.Nil(logline, "Obtained LogLine despite illegal DatetimeNanos")
+	assert.NotNil(err, "Should have got error")
 
 	// Illegal Datetime
 	line = "6b793913-7cd9-477a-bbfa-62f07fbac87b 2016-04-21 09:61:01.199025638 11553177 [29981.752359]   202   203 D Kernel-Trace:      kworker/1:1-21588 [001] ...2 29981.751893: phonelab_periodic_ctx_switch_info: cpu=1 pid=7641 tgid=7613 nice=0 comm=Binder_1 utime=0 stime=0 rtime=158906 bg_utime=0 bg_stime=0 bg_rtime=0 s_run=0 s_int=2 s_unint=0 s_oth=0 log_idx=79981"
-	logline = phonelab_backend.ParseLogline(line)
+	logline, err = phonelab_backend.ParseLogline(line)
 	assert.Nil(logline, "Obtained LogLine despite illegal Datetime")
+	assert.NotNil(err, "Should have got error")
 	// Legal Datetime with short micros
 	line = "6b793913-7cd9-477a-bbfa-62f07fbac87b 2016-04-21 09:51:01.1 11553177 [29981.752359]   202   203 D Kernel-Trace:      kworker/1:1-21588 [001] ...2 29981.751893: phonelab_periodic_ctx_switch_info: cpu=1 pid=7641 tgid=7613 nice=0 comm=Binder_1 utime=0 stime=0 rtime=158906 bg_utime=0 bg_stime=0 bg_rtime=0 s_run=0 s_int=2 s_unint=0 s_oth=0 log_idx=79981"
-	logline = phonelab_backend.ParseLogline(line)
+	logline, err = phonelab_backend.ParseLogline(line)
 	assert.NotNil(logline, "Failed to obtain LogLine despite legal Datetime")
 	// Legal Datetime with long micros
 	line = "6b793913-7cd9-477a-bbfa-62f07fbac87b 2016-04-21 09:51:01.199025638 11553177 [29981.752359]   202   203 D Kernel-Trace:      kworker/1:1-21588 [001] ...2 29981.751893: phonelab_periodic_ctx_switch_info: cpu=1 pid=7641 tgid=7613 nice=0 comm=Binder_1 utime=0 stime=0 rtime=158906 bg_utime=0 bg_stime=0 bg_rtime=0 s_run=0 s_int=2 s_unint=0 s_oth=0 log_idx=79981"
-	logline = phonelab_backend.ParseLogline(line)
+	logline, err = phonelab_backend.ParseLogline(line)
 	assert.NotNil(logline, "Failed to obtain LogLine despite legal Datetime")
-
+	assert.Nil(err, "Got error despite valid logline", err)
 	// Illegal LocatToken
 	line = "6b793913-7cd9-477a-bbfa-62f07fbac87b 2016-04-21 09:59:01.199025638 11500000000000000000000000000000000000053177 [29981.752359]   202   203 D Kernel-Trace:      kworker/1:1-21588 [001] ...2 29981.751893: phonelab_periodic_ctx_switch_info: cpu=1 pid=7641 tgid=7613 nice=0 comm=Binder_1 utime=0 stime=0 rtime=158906 bg_utime=0 bg_stime=0 bg_rtime=0 s_run=0 s_int=2 s_unint=0 s_oth=0 log_idx=79981"
-	logline = phonelab_backend.ParseLogline(line)
+	logline, err = phonelab_backend.ParseLogline(line)
 	assert.Nil(logline, "Obtained LogLine despite illegal LogcatToken")
+	assert.NotNil(err, "Should have got error")
 
 	// Illegal Pid
 	line = "6b793913-7cd9-477a-bbfa-62f07fbac87b 2016-04-21 09:59:01.199025638 11553177 [29981.752359]   20000000000000000000002   203 D Kernel-Trace:      kworker/1:1-21588 [001] ...2 29981.751893: phonelab_periodic_ctx_switch_info: cpu=1 pid=7641 tgid=7613 nice=0 comm=Binder_1 utime=0 stime=0 rtime=158906 bg_utime=0 bg_stime=0 bg_rtime=0 s_run=0 s_int=2 s_unint=0 s_oth=0 log_idx=79981"
-	logline = phonelab_backend.ParseLogline(line)
+	logline, err = phonelab_backend.ParseLogline(line)
 	assert.Nil(logline, "Obtained LogLine despite illegal Pid")
+	assert.NotNil(err, "Should have got error")
 
 	// Illegal Tid
 	line = "6b793913-7cd9-477a-bbfa-62f07fbac87b 2016-04-21 09:59:01.199025638 11553177 [29981.752359]   202   2000000000000000000000003 D Kernel-Trace:      kworker/1:1-21588 [001] ...2 29981.751893: phonelab_periodic_ctx_switch_info: cpu=1 pid=7641 tgid=7613 nice=0 comm=Binder_1 utime=0 stime=0 rtime=158906 bg_utime=0 bg_stime=0 bg_rtime=0 s_run=0 s_int=2 s_unint=0 s_oth=0 log_idx=79981"
-	logline = phonelab_backend.ParseLogline(line)
+	logline, err = phonelab_backend.ParseLogline(line)
 	assert.Nil(logline, "Obtained LogLine despite illegal Tid")
+	assert.NotNil(err, "Should have got error")
 
 	line = "6b793913-7cd9-477a-bbfa-62f07fbac87b 2016-04-21 09:59:01.199025638 11553177 [29981.752359]   202   203 D Kernel-Trace:      kworker/1:1-21588 [001] ...2 29981.751893: phonelab_periodic_ctx_switch_info: cpu=1 pid=7641 tgid=7613 nice=0 comm=Binder_1 utime=0 stime=0 rtime=158906 bg_utime=0 bg_stime=0 bg_rtime=0 s_run=0 s_int=2 s_unint=0 s_oth=0 log_idx=79981"
-	logline = phonelab_backend.ParseLogline(line)
+	logline, err = phonelab_backend.ParseLogline(line)
 	payload := "kworker/1:1-21588 [001] ...2 29981.751893: phonelab_periodic_ctx_switch_info: cpu=1 pid=7641 tgid=7613 nice=0 comm=Binder_1 utime=0 stime=0 rtime=158906 bg_utime=0 bg_stime=0 bg_rtime=0 s_run=0 s_int=2 s_unint=0 s_oth=0 log_idx=79981"
 
 	assert.NotEqual(nil, logline, "Failed to parse logline")
+	assert.Nil(err, "Got error despite valid logline", err)
 	assert.Equal("6b793913-7cd9-477a-bbfa-62f07fbac87b", logline.BootId, "BootId was not parsed properly")
 	assert.Equal("2016-04-21 09:59:01", strftime.Format("%Y-%m-%d %H:%M:%S", logline.Datetime), "Datetime was not parsed properly")
 	assert.Equal(int64(199025638), logline.DatetimeNanos, "DatetimeNanos was not parsed properly")

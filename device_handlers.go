@@ -175,9 +175,10 @@ func UpdateOutFile(work *DeviceWork) (err error, fail bool) {
 	}
 	defer fstruct.Close()
 
+	var logline *Logline
 	for reader.Scan() {
 		line := reader.Text()
-		logline := ParseLogline(line)
+		logline, err = ParseLogline(line)
 		//fmt.Println(line)
 		if logline != nil {
 			work.BootId = logline.BootId

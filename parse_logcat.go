@@ -1,6 +1,7 @@
 package phonelab_backend
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -18,7 +19,7 @@ var PATTERN = regexp.MustCompile(`` +
 	`\s*(?P<pid>\d+)` +
 	`\s*(?P<tid>\d+)` +
 	`\s*(?P<level>[A-Z]+)` +
-	`\s*(?P<tag>\S+)\s*:` +
+	`\s*(?P<tag>\S+)\s*:?` +
 	`\s*(?P<payload>.*)` +
 	`)`)
 
@@ -40,9 +41,7 @@ var PHONELAB_PATTERN = regexp.MustCompile(`` +
 	`\s+(?P<payload>.*)` +
 	`)`)
 
-func ParseLogline(line string) *Logline {
-	var err error
-
+func ParseLogline(line string) (logline *Logline, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Println("line:", line)
@@ -54,7 +53,8 @@ func ParseLogline(line string) *Logline {
 	values_raw := PATTERN.FindAllStringSubmatch(line, -1)
 	if values_raw == nil {
 		//fmt.Fprintln(os.Stderr, "Line failed logcat pattern:", line)
-		return nil
+		err = errors.New(fmt.Sprintf("Failed PATTERN.FindAllStringSubmatch(): %v", err))
+		return
 	}
 	values := values_raw[0]
 
@@ -63,9 +63,10 @@ func ParseLogline(line string) *Logline {
 		kv_map[names[i]] = value
 	}
 
-	datetimeNanos, err := strconv.ParseInt(kv_map["datetime"][20:], 0, 64)
+	datetimeNanos, err := strconv.ParseInt(kv_map["datetime"][20:], 10, 64)
 	if err != nil {
-		return nil
+		err = errors.New(fmt.Sprintf("Failed to parse datetimeNanos: %v", err))
+		return
 	}
 	// Convert values
 	// Some datetimes are 9 digits instead of 6
@@ -77,12 +78,14 @@ func ParseLogline(line string) *Logline {
 	}
 
 	if datetime, err = strptime.Parse(kv_map["datetime"][:19], "%Y-%m-%d %H:%M:%S"); err != nil {
-		return nil
+		err = errors.New(fmt.Sprintf("Failed to parse datetime: %v", err))
+		return
 	}
 
 	logcat_token, err := strconv.ParseInt(kv_map["logcat_token"], 0, 64)
 	if err != nil {
-		return nil
+		err = errors.New(fmt.Sprintf("Failed to parse logcat_token: %v", err))
+		return
 	}
 
 	// Cannot fail
@@ -90,17 +93,19 @@ func ParseLogline(line string) *Logline {
 
 	pid, err := strconv.ParseInt(kv_map["pid"], 0, 32)
 	if err != nil {
-		return nil
+		err = errors.New(fmt.Sprintf("Failed to parse pid: %v", err))
+		return
 	}
 	tid, err := strconv.ParseInt(kv_map["tid"], 0, 32)
 	if err != nil {
-		return nil
+		err = errors.New(fmt.Sprintf("Failed to parse tid: %v", err))
+		return
 	}
 
-	result := Logline{line, kv_map["boot_id"], datetime, datetimeNanos, logcat_token,
+	logline = &Logline{line, kv_map["boot_id"], datetime, datetimeNanos, logcat_token,
 		tracetime, int32(pid), int32(tid), kv_map["level"],
 		kv_map["tag"], kv_map["payload"]}
-	return &result
+	return
 }
 
 type Logline struct {
