@@ -17,7 +17,7 @@ script:
   - git log --oneline | head -n 1
   - mkdir $HOME/copy
   - rsync -azpr ./ $HOME/copy/
-  - go test -coverprofile=$HOME/copy/coverage.txt -covermode=atomic -timeout=60s -v
+  - go test -coverprofile=$HOME/copy/coverage.txt -covermode=atomic -timeout=120s -v
   - rm -rf $GOPATH/src/github.com/gurupras/phonelab_backend
   - cd $HOME/copy
 
