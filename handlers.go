@@ -140,7 +140,7 @@ func DeviceWorkHandler(deviceId string, workChannel chan *Work, processingConfig
 
 		processRoutine := func(workList []*Work, processingConfig *ProcessingConfig) {
 			defer processWg.Done()
-			logger.Debugln(fmt.Sprintf("%s -> Merging %d files to out", deviceId, len(workList)))
+			//logger.Debugln(fmt.Sprintf("%s -> Merging %d files to out", deviceId, len(workList)))
 			if err = ProcessProcessConfig(workList, processingConfig); err != nil {
 				// TODO: What should we do here?
 				// We're in a goroutine, and so, should we

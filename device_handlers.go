@@ -78,20 +78,20 @@ func ProcessProcessConfig(workList []*Work, processingConfig *ProcessingConfig) 
 		err = errors.New(fmt.Sprintf("Stopping ProcessProcessConfig due to fail condition...\nerrors:\n%v\n", errs))
 		return
 	}
-	logger.Debugln(fmt.Sprintf("%s -> Finished pre-processing", deviceWork.DeviceId))
+	//logger.Debugln(fmt.Sprintf("%s -> Finished pre-processing", deviceWork.DeviceId))
 
 	// FIXME: For some reason TestUpload is stuck in this
 	if err = processingConfig.Core(deviceWork, processingConfig); err != nil {
 		err = errors.New(fmt.Sprintf("Failed core processing: %v", err))
 		return
 	}
-	logger.Debugln(fmt.Sprintf("%s -> Finished core", deviceWork.DeviceId))
+	//logger.Debugln(fmt.Sprintf("%s -> Finished core", deviceWork.DeviceId))
 
 	if errs, fail = ProcessStage(processingConfig.PostProcessing, deviceWork); len(errs) > 0 && fail {
 		err = errors.New(fmt.Sprintf("Stopping ProcessProcessConfig due to fail condition...\nerrors:\n%v\n", errs))
 		return
 	}
-	logger.Debugln(fmt.Sprintf("%s -> Finished post-processing", deviceWork.DeviceId))
+	//logger.Debugln(fmt.Sprintf("%s -> Finished post-processing", deviceWork.DeviceId))
 	return
 }
 
