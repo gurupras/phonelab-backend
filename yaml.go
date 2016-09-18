@@ -2,26 +2,12 @@ package phonelab_backend
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
-	"time"
 
 	"gopkg.in/yaml.v2"
 )
-
-type StagingMetadata struct {
-	UploadMetadata
-	Dates []time.Time `yaml:dates`
-}
-
-type OutMetadata struct {
-	Versions         []string `yaml:Versions`
-	DeviceId         string   `yaml:device_id`
-	PackageNames     []string `yaml:package_names`
-	UploadTimestamps []int64  `yaml:upload_timestamps`
-	StartTimestamps  []int64  `yaml:start_timestamp`
-	EndTimestamps    []int64  `yaml:end_timestamp`
-}
 
 func WorkToStagingMetadata(work *Work) *StagingMetadata {
 	if work == nil {
@@ -43,21 +29,23 @@ func WriteStagingMetadata(writer io.Writer, metadata *StagingMetadata) (err erro
 	buf := new(bytes.Buffer)
 	metadataBytes, err := yaml.Marshal(metadata)
 	if err != nil {
-		return err
+		err = errors.New(fmt.Sprintf("Failed to marshal metadata into YAML: %v", err))
+		return
 	}
+	buf.WriteString("---\n")
 	buf.Write(metadataBytes)
-	writer.Write([]byte(fmt.Sprintf("---\n%v---\n", buf.String())))
+	buf.WriteString("---\n")
+	if _, err = writer.Write(buf.Bytes()); err != nil {
+		err = errors.New(fmt.Sprintf("Failed to write bytes to writer: %v", err))
+		return
+	}
 	return
 }
 
 func WriteWorkAsYamlMetadataBytes(writer io.Writer, work *Work) (err error) {
-	var metadata []byte
-
-	metadata = GenerateStagingMetadata(work)
-
-	buf := new(bytes.Buffer)
-	buf.Write(metadata)
-	metadataStr := buf.String()
-	_, err = writer.Write([]byte(fmt.Sprintf("---\n%v---\n", metadataStr)))
+	if err = WriteStagingMetadata(writer, WorkToStagingMetadata(work)); err != nil {
+		err = errors.New(fmt.Sprintf("Failed WriteWorkAsYamlMetadataBytes(): %v", err))
+		return
+	}
 	return
 }
