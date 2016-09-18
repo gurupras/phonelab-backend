@@ -12,13 +12,24 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestProcessStagedWork(t *testing.T) {
+func TestProcessProcessWork(t *testing.T) {
 	//t.Parallel()
 	assert := assert.New(t)
 
 	var err error
 
 	defer Recover("TestProcessStagedWork", assert)
+
+	// Test for nil work list
+	deviceWork := new(phonelab_backend.DeviceWork)
+	deviceWork.WorkList = nil
+	err = phonelab_backend.ProcessProcessConfig(deviceWork.WorkList, nil)
+	assert.NotNil(err, "Expected error for device work with nil WorkList")
+
+	// Now test zero length work list
+	deviceWork.WorkList = make([]*phonelab_backend.Work, 0)
+	err = phonelab_backend.ProcessProcessConfig(deviceWork.WorkList, nil)
+	assert.NotNil(err, "Expected error for device work with zero length WorkList")
 
 	processingConfig := new(phonelab_backend.ProcessingConfig)
 	processingConfig.WorkSetCheckPeriod = 1 * time.Second
