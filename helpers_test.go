@@ -21,7 +21,6 @@ import (
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
 	"github.com/parnurzeal/gorequest"
-	"github.com/satori/go.uuid"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -76,14 +75,15 @@ func DataGenerator(channel chan string, stop chan interface{}) {
 		shouldStop = true
 	}()
 
-	var logcatToken int64
-	var now int64
-	var bootId string
+	var rlg *RandomLoglineGenerator
 
 	reset := func() {
-		bootId = uuid.NewV4().String()
-		logcatToken = 0
-		now = time.Now().UnixNano()
+		rlg = new(RandomLoglineGenerator)
+		rlg.BootId = GenerateRandomBootId()
+		rlg.LastLogcatToken = 0
+		rlg.StartTimestamp = time.Now()
+		rlg.LastLogcatTimestamp = rlg.StartTimestamp
+		rlg.MaxDelayBetweenLoglines = 4 * time.Second
 	}
 
 	reset()
@@ -98,9 +98,8 @@ func DataGenerator(channel chan string, stop chan interface{}) {
 		}
 
 		// Generate a logline
-		line := GenerateRandomLogline(bootId, now, logcatToken)
+		line := GenerateRandomLogline(rlg)
 		channel <- line
-		logcatToken++
 		stopMutex.Unlock()
 	}
 }

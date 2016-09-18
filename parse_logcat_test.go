@@ -1,20 +1,85 @@
 package phonelab_backend_test
 
 import (
+	"bytes"
+	"compress/gzip"
 	"fmt"
+	"io"
 	"math/rand"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/gurupras/gocommons"
 	"github.com/gurupras/phonelab_backend"
 	"github.com/jehiah/go-strftime"
+	"github.com/satori/go.uuid"
 	"github.com/stretchr/testify/assert"
 )
 
-func GenerateRandomLogline(bootId string, timeOffset int64, tokenNumber int64) string {
+type RandomLoglineGenerator struct {
+	BootId                  string
+	StartTimestamp          time.Time
+	LastLogcatTimestamp     time.Time
+	LastLogcatToken         int64
+	MaxDelayBetweenLoglines time.Duration
+}
+
+func GenerateRandomBootId() string {
+	return uuid.NewV4().String()
+}
+
+func GenerateTag() string {
+	unallowed := ":"
+
+	tag := fmt.Sprintf("DummyTag->%s:", GenerateRandomString(1+rand.Intn(32), false, unallowed))
+	return tag
+}
+
+// TODO: Combine GenerateRandomLogline and GenerateLoglineForPayload
+func GenerateRandomLogline(rlg *RandomLoglineGenerator) string {
 	tokens := make([]string, 0)
 
+	tokens = append(tokens, rlg.BootId)
+
+	maxDelayNanos := rlg.MaxDelayBetweenLoglines.Nanoseconds()
+	delay := time.Duration(rand.Int63n(maxDelayNanos))
+	loglineTimestamp := rlg.LastLogcatTimestamp.Add(delay)
+	tokens = append(tokens, fmt.Sprintf("%s.%09d", strftime.Format("%Y-%m-%d %H:%M:%S", loglineTimestamp), loglineTimestamp.Nanosecond()))
+
+	tokens = append(tokens, fmt.Sprintf("%v", rlg.LastLogcatToken+1))
+
+	offset := float64((loglineTimestamp.UnixNano() - rlg.StartTimestamp.UnixNano()))
+	tokens = append(tokens, fmt.Sprintf("[%.06f]", offset/1e6))
+
+	tokens = append(tokens, fmt.Sprintf("%v", rand.Int31n(32768)))
+	tokens = append(tokens, fmt.Sprintf("%v", rand.Int31n(32768)))
+
+	levels := []string{"V", "D", "I", "W", "E", "C", "WTF"}
+	tokens = append(tokens, levels[rand.Intn(len(levels))])
+
+	tokens = append(tokens, GenerateTag())
+
+	payload := GenerateRandomString(32+rand.Intn(256), true, "")
+	tokens = append(tokens, payload)
+
+	// Now update rlg
+	rlg.LastLogcatTimestamp = loglineTimestamp
+	rlg.LastLogcatToken++
+
+	return strings.Join(tokens, "\t") + "\n"
+}
+
+func GenerateLoglineForPayload(payload string) string {
+	timeOffset := time.Now().UnixNano()
+	tokenNumber := int64(322222)
+
+	tokens := make([]string, 0)
+
+	bootId := GenerateRandomBootId()
 	tokens = append(tokens, bootId)
 
 	timeNow := time.Now()
@@ -31,22 +96,83 @@ func GenerateRandomLogline(bootId string, timeOffset int64, tokenNumber int64) s
 	levels := []string{"V", "D", "I", "W", "E", "C", "WTF"}
 	tokens = append(tokens, levels[rand.Intn(len(levels))])
 
-	tag := fmt.Sprintf("DummyTag->%s", GenerateRandomString(rand.Intn(32)))
-	tokens = append(tokens, tag)
+	tokens = append(tokens, GenerateTag())
 
-	payload := GenerateRandomString(32 + rand.Intn(256))
 	tokens = append(tokens, payload)
 
-	return strings.Join(tokens, "\t") + "\n"
+	return `` + strings.Join(tokens, "\t") + "\n"
 }
 
-func GenerateRandomString(length int) string {
-	const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ123456789!@#$%^&*()_+[]{};:'\",<.>/?\\|	 "
+func GenerateRandomString(length int, allowSpaces bool, unallowed string) string {
+	var letterBytes string = `abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ123456789!@#$%^&*()_+[]{};:'",<.>/?\|`
+	var spaceBytes string = ` 	`
+
+	validBuf := new(bytes.Buffer)
+	banBuf := new(bytes.Buffer)
+
+	for _, runeByte := range unallowed {
+		banBuf.WriteString(string(runeByte))
+	}
+
+	for _, runeBytes := range letterBytes {
+		if !strings.Contains(banBuf.String(), string(runeBytes)) {
+			validBuf.WriteString(string(runeBytes))
+		}
+	}
+
+	if allowSpaces {
+		for _, runeBytes := range spaceBytes {
+			if !strings.Contains(banBuf.String(), string(runeBytes)) {
+				validBuf.WriteString(string(runeBytes))
+			}
+		}
+	}
+
 	b := make([]byte, length)
+
+	validBytes := validBuf.String()
 	for i := range b {
-		b[i] = letterBytes[rand.Intn(len(letterBytes))]
+		b[i] = validBytes[rand.Intn(len(validBytes))]
 	}
 	return string(b)
+}
+
+func TestGenerateBootId(t *testing.T) {
+	//t.Parallel()
+
+	assert := assert.New(t)
+
+	pattern := regexp.MustCompile(`(?P<boot_id>[a-z0-9\-]{36})`)
+	for i := 0; i < 1000; i++ {
+		id := GenerateRandomBootId()
+		values_raw := pattern.FindAllStringSubmatch(id, -1)
+		assert.NotEqual(nil, values_raw, "Failed FindAllStringSubmatch()")
+	}
+}
+
+func TestGenerateRandomLogline(t *testing.T) {
+	//t.Parallel()
+
+	assert := assert.New(t)
+
+	var err error
+	var logline *phonelab_backend.Logline
+	var line string
+
+	rlg := new(RandomLoglineGenerator)
+	rlg.BootId = GenerateRandomBootId()
+	rlg.StartTimestamp = time.Now()
+	rlg.LastLogcatTimestamp = rlg.StartTimestamp
+	rlg.MaxDelayBetweenLoglines = 3 * time.Minute
+
+	for i := 0; i < 10000; i++ {
+		line = GenerateRandomLogline(rlg)
+		if logline, err = phonelab_backend.ParseLogline(line); err != nil || logline == nil {
+			break
+		}
+	}
+	assert.Nil(err, fmt.Sprintf("Failed to parse logline: %v\n%v\n", err, line))
+	assert.NotNil(logline, fmt.Sprintf("No error but logline was nil?\n%v\n", line))
 }
 
 func TestCheckLogcatPattern(t *testing.T) {
@@ -118,4 +244,95 @@ func TestCheckLogcatPattern(t *testing.T) {
 	assert.Equal("D", logline.Level, "Level was not parsed properly")
 	assert.Equal("Kernel-Trace", logline.Tag, "Tag was not parsed properly")
 	assert.Equal(payload, logline.Payload, "Payload was not parsed properly")
+}
+
+func TestSortLogs(t *testing.T) {
+	//t.Parallel()
+
+	assert := assert.New(t)
+
+	var err error
+
+	dir := filepath.Join(testDirBase, "staging-TestSortLogs")
+
+	err = gocommons.Makedirs(dir)
+	assert.Nil(err, "Failed to create temp dir", err)
+
+	var (
+		ifile      *os.File
+		gzipWriter *gzip.Writer
+		ofile      *os.File
+		gzipReader *gzip.Reader
+	)
+
+	filePath := filepath.Join(dir, "input.gz")
+	ifile, err = os.OpenFile(filePath, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0664)
+	assert.Nil(err, "Failed to create input file", err)
+	gzipWriter = gzip.NewWriter(ifile)
+
+	rlg := new(RandomLoglineGenerator)
+	rlg.BootId = GenerateRandomBootId()
+	rlg.LastLogcatToken = 0
+	rlg.StartTimestamp = time.Now()
+	rlg.LastLogcatTimestamp = rlg.StartTimestamp
+	rlg.MaxDelayBetweenLoglines = 10 * time.Second
+
+	// Generate about 1000 loglines
+	lines := make([]string, 0)
+	for i := 0; i < 1000; i++ {
+		lines = append(lines, strings.TrimSpace(GenerateRandomLogline(rlg)))
+	}
+
+	// Now mess this up and write it into the file
+	mod5Lines := make([]string, 0)
+	nonMod5Lines := make([]string, 0)
+	for i := 0; i < 1000; i++ {
+		if i%5 == 0 {
+			mod5Lines = append(mod5Lines, lines[i])
+		} else {
+			nonMod5Lines = append(nonMod5Lines, lines[i])
+		}
+	}
+
+	gzipWriter.Write([]byte(strings.Join(mod5Lines, "\n") + "\n"))
+	gzipWriter.Write([]byte(strings.Join(nonMod5Lines, "\n")))
+
+	gzipWriter.Flush()
+	gzipWriter.Close()
+	ifile.Close()
+
+	outPath := filepath.Join(dir, "output.gz")
+	err = phonelab_backend.SortLogs(filePath, outPath)
+	assert.Nil(err, "Failed to sort", err)
+
+	// Now, read the output file and make sure it matches the string
+	// version of lines array
+
+	// This is what is expected
+	expected := new(bytes.Buffer)
+	expected.WriteString(strings.Join(lines, "\n"))
+
+	origPath := filepath.Join(dir, "orig.gz")
+	orig, err := os.OpenFile(origPath, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0664)
+	assert.Nil(err, "Failed to create orig.gz", err)
+	gzipWriter = gzip.NewWriter(orig)
+	_, err = io.Copy(gzipWriter, expected)
+	assert.Nil(err, "Failed to copy to orig.gz", err)
+	gzipWriter.Flush()
+	gzipWriter.Close()
+
+	expected.Reset()
+	expected.WriteString(strings.Join(lines, "\n"))
+
+	ofile, err = os.OpenFile(outPath, os.O_RDONLY, 0664)
+	assert.Nil(err, "Failed to open output file", err)
+	gzipReader, err = gzip.NewReader(ofile)
+	assert.Nil(err, "Failed to get gzip reader to ofile", err)
+
+	obtained := new(bytes.Buffer)
+	_, err = io.Copy(obtained, gzipReader)
+	assert.Nil(err, "Failed to do io.Copy()", err)
+
+	equal := strings.Compare(expected.String(), obtained.String())
+	assert.Equal(0, equal, "Strings don't match")
 }
