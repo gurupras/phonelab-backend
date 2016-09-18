@@ -16,7 +16,6 @@ import (
 	"github.com/fatih/set"
 	"github.com/gurupras/gocommons"
 	"github.com/gurupras/gocommons/seekable_stream"
-	"github.com/pbnjay/strptime"
 )
 
 type UploadMetadata struct {
@@ -25,6 +24,11 @@ type UploadMetadata struct {
 	PackageName     string `yaml:package_name`
 	UploadTimestamp int64  `yaml:upload_timestamp`
 	UploadFileName  string
+}
+
+type StagingMetadata struct {
+	UploadMetadata
+	Dates []time.Time `yaml:dates`
 }
 
 type Work struct {
@@ -134,9 +138,16 @@ func DeviceWorkHandler(deviceId string, workChannel chan *Work, processingConfig
 
 		processWg := sync.WaitGroup{}
 
-		processRoutine := func(work *Work, processingConfig *ProcessingConfig) {
+		processRoutine := func(workList []*Work, processingConfig *ProcessingConfig) {
 			defer processWg.Done()
-			ProcessProcessConfig(work, processingConfig)
+			if err = ProcessProcessConfig(workList, processingConfig); err != nil {
+				// TODO: What should we do here?
+				// We're in a goroutine, and so, should we
+				// return error via a channel?
+
+				// For now, just panic
+				panic(err.Error())
+			}
 		}
 
 		for {
@@ -144,23 +155,36 @@ func DeviceWorkHandler(deviceId string, workChannel chan *Work, processingConfig
 				break
 			}
 			now := time.Now()
+
+			datesToProcess := set.NewNonTS()
+			dateWorkMap := make(map[time.Time][]*Work)
+
 			for _, obj := range workSet.List() {
 				work := obj.(*Work)
-				var mostRecentDate time.Time
-				if mostRecentDate, err = strptime.ParseStrict("1970-01-01", "%Y-%M-%d"); err != nil {
-					err = errors.New(fmt.Sprintf("Failed to initialize mostRecentDate to 1970-01-01: %v", err))
-					return
+
+				if len(work.StagingMetadata.Dates) > 1 {
+					fmt.Fprintln(os.Stderr, fmt.Sprintf("Warning: More than 1 date: %s -> %v", work.StagingFileName, work.StagingMetadata.Dates))
 				}
+
 				for _, date := range work.StagingMetadata.Dates {
-					if date.After(mostRecentDate) {
-						mostRecentDate = date
+					if now.Sub(date) > processingConfig.DelayBeforeProcessing {
+						if !datesToProcess.Has(date) {
+							datesToProcess.Add(date)
+							dateWorkMap[date] = make([]*Work, 0)
+						}
+						dateWorkMap[date] = append(dateWorkMap[date], work)
+						workSet.Remove(work)
 					}
 				}
-				if now.Sub(mostRecentDate) > processingConfig.DelayBeforeProcessing {
-					workSet.Remove(work)
-					processWg.Add(1)
-					go processRoutine(work, processingConfig)
-				}
+
+			}
+
+			for _, obj := range datesToProcess.List() {
+				date := obj.(time.Time)
+
+				processWg.Add(1)
+				go processRoutine(dateWorkMap[date], processingConfig)
+
 			}
 			time.Sleep(processingConfig.WorkSetCheckPeriod)
 		}

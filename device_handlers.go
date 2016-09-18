@@ -1,18 +1,11 @@
 package phonelab_backend
 
 import (
-	"bufio"
-	"bytes"
-	"compress/gzip"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
-
-	"gopkg.in/yaml.v2"
 
 	"github.com/gurupras/gocommons"
 )
@@ -20,11 +13,20 @@ import (
 var ()
 
 type DeviceWork struct {
-	*Work
-	BootId         string
+	WorkList       []*Work
+	DeviceId       string
 	OutFile        *gocommons.File
 	StartTimestamp int64
 	EndTimestamp   int64
+}
+
+type OutMetadata struct {
+	Versions         []string `yaml:versions`
+	DeviceId         string   `yaml:device_id`
+	PackageNames     []string `yaml:package_names`
+	UploadTimestamps []int64  `yaml:upload_timestamps`
+	BootIds          []string `yaml:boot_ids`
+	Tags             []string `yaml:tags`
 }
 
 type ProcessingFunction func(work *DeviceWork) (error, bool)
@@ -42,8 +44,6 @@ func InitializeProcessingConfig() *ProcessingConfig {
 
 	pc.Core = ProcessStagedWork
 
-	pc.PreProcessing = append(pc.PreProcessing, UpdateOutFile)
-	pc.PreProcessing = append(pc.PreProcessing, UpdateMetadata)
 	return pc
 }
 
@@ -61,56 +61,14 @@ func ProcessStage(functions []ProcessingFunction, work *DeviceWork) (errs []erro
 	return
 }
 
-func CopyStagedFileToOutput(deviceWork *DeviceWork) (err error, fail bool) {
-	var file *os.File
-	var n int64
-
-	// Critical
-	fail = true
-
-	// Actual processing I guess
-	file, err = os.OpenFile(deviceWork.StagingFileName, os.O_RDONLY, 0)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to open work.StagingFileName", err)
-		return
-	}
-	var compressedReader *gzip.Reader
-
-	if compressedReader, err = gzip.NewReader(file); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to get gzip.Reader to staged file", err)
+func ProcessProcessConfig(workList []*Work, processingConfig *ProcessingConfig) (err error) {
+	if workList == nil || len(workList) == 0 {
 		return
 	}
 
-	//fmt.Println("Input:", file.Name())
-	//fmt.Println("Output:", deviceWork.OutFile.Path)
-
-	//fmt.Println("Processing ...")
-	var outWriter gocommons.Writer
-	var outFile *gocommons.File
-
-	if outFile, err = gocommons.Open(deviceWork.OutFile.Path, os.O_WRONLY|os.O_APPEND, gocommons.GZ_TRUE); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to open file for writing data", err)
-		return
-	}
-	defer outFile.Close()
-
-	if outWriter, err = outFile.Writer(1048576); err != nil {
-		if n, err = io.Copy(&outWriter, compressedReader); err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to copy from staging to out", err)
-		}
-	}
-	outWriter.Flush()
-	outWriter.Close()
-
-	_ = n
-	//fmt.Println("Updated outfile:", n)
-	return
-
-}
-
-func ProcessProcessConfig(work *Work, processingConfig *ProcessingConfig) (err error) {
 	deviceWork := &DeviceWork{
-		Work: work,
+		WorkList: workList,
+		DeviceId: workList[0].DeviceId,
 	}
 
 	var errs []error
@@ -134,235 +92,111 @@ func ProcessProcessConfig(work *Work, processingConfig *ProcessingConfig) (err e
 }
 
 func ProcessStagedWork(deviceWork *DeviceWork, processingConfig *ProcessingConfig) (err error) {
-	// Currently doesn't do anything other than CopyStagedFileToOutput
-	err, _ = CopyStagedFileToOutput(deviceWork)
-	return
-}
-
-func OpenFileAndReader(fpath string) (*gocommons.File, *bufio.Scanner, error) {
-	var err error
-	var fstruct *gocommons.File
-	var reader *bufio.Scanner
-
-	if fstruct, err = gocommons.Open(fpath, os.O_RDONLY, gocommons.GZ_UNKNOWN); err != nil {
-		err = errors.New(fmt.Sprintf("Failed to open file: %v", err))
-		return nil, nil, err
-	}
-
-	if reader, err = fstruct.Reader(1048576); err != nil {
-		err = errors.New(fmt.Sprintf("Failed to get reader to file: %v", err))
-		fstruct.Close()
-		return nil, nil, err
-	}
-	return fstruct, reader, err
-}
-
-func UpdateOutFile(work *DeviceWork) (err error, fail bool) {
-	// --------- ASSUMPTION ---------
-	// We assume that each log file can only have one boot ID.
-	// This is hopefully true
-	// ------- END ASSUMPTION -------
-
-	// Critical
-	fail = true
-
-	// Find bootID
-	var fstruct *gocommons.File
-	var reader *bufio.Scanner
-
-	if fstruct, reader, err = OpenFileAndReader(work.StagingFileName); err != nil {
+	if len(deviceWork.WorkList) == 0 {
 		return
 	}
-	defer fstruct.Close()
 
-	var logline *Logline
-	for reader.Scan() {
-		line := reader.Text()
-		logline, err = ParseLogline(line)
-		//fmt.Println(line)
-		if logline != nil {
-			work.BootId = logline.BootId
-			break
-		}
+	// First, we need to sort each chunk in the WorkList
+	// Then we update the metadata on the output file
+	// Then we do an n-way merge between all the chunks to produce an output file for a date
+	// TODO: Then, we move it to wherever it is supposed to go
+
+	// Date corresponding to this work
+	date := deviceWork.WorkList[0].StagingMetadata.Dates[0]
+
+	outDirBase := deviceWork.WorkList[0].OutDir
+	deviceOutDir := filepath.Join(outDirBase, deviceWork.DeviceId)
+	// Final out dir
+	yearStr := fmt.Sprintf("%v", date.Year())
+	monthStr := fmt.Sprintf("%v", date.Month())
+	dayStr := fmt.Sprintf("%v", date.Day())
+	resultOutDir := filepath.Join(deviceOutDir, yearStr, monthStr)
+	if err = gocommons.Makedirs(resultOutDir); err != nil {
+		err = errors.New(fmt.Sprintf("Failed to create resultOutDir(%s): %v", resultOutDir, err))
+		return
 	}
-	//fmt.Println("BootID:", work.BootId)
 
-	var ok bool
-	if ok, err = gocommons.Exists(work.Work.OutDir); !ok || err != nil {
-		if err = gocommons.Makedirs(work.Work.OutDir); err != nil {
-			err = errors.New(fmt.Sprintf("Failed to create output directory: %v", err))
+	sortedDirBase := filepath.Join(deviceWork.WorkList[0].StagingDir, "sorted")
+	if err = gocommons.Makedirs(sortedDirBase); err != nil {
+		err = errors.New(fmt.Sprintf("Failed to create directory for sorted files: %v", err))
+		return err
+	}
+
+	sortedFiles := make([]string, 0)
+	for _, chunkWork := range deviceWork.WorkList {
+		fileName := filepath.Base(chunkWork.StagingFileName)
+		sortedFile := filepath.Join(sortedDirBase, fileName)
+
+		if err = SortLogs(chunkWork.StagingFileName, sortedFile); err != nil {
+			err = errors.New(fmt.Sprintf("Failed sortLogs(%v, %v): %v", chunkWork.StagingFileName, sortedFile, err))
 			return
 		}
+
+		sortedFiles = append(sortedFiles, sortedFile)
 	}
 
-	outfile := filepath.Join(work.Work.OutDir, work.BootId+".gz")
-	//fmt.Println("outfile:", outfile)
-	if work.OutFile, err = gocommons.Open(outfile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, gocommons.GZ_TRUE); err != nil {
-		err = errors.New(fmt.Sprintf("Failed to open output file", err))
+	// Set up the output file for writing
+	var (
+		exists bool
+		ofile  *gocommons.File
+		writer gocommons.Writer
+	)
+
+	outPath := filepath.Join(resultOutDir, dayStr+".gz")
+	if exists, err = gocommons.Exists(outPath); err != nil {
+		err = errors.New(fmt.Sprintf("Failed to check if outPath(%s) exists: %v", outPath, err))
 		return
-	}
-	//fmt.Println("Assigned outfile:", outfile)
-	return
-}
+	} else if exists {
+		//err = errors.New(fmt.Sprintf("WARNING! outPath(%s) already exists? We're getting log files for a date after that date was already processed!", outPath))
+		//return
 
-func UpdateMetadata(work *DeviceWork) (err error, fail bool) {
-	// Critical
-	fail = true
-
-	var metadataPath string
-	var metadataFile *gocommons.File
-
-	outdir := work.OutDir
-
-	metadataPath = filepath.Join(outdir, work.BootId+".yaml")
-	exists := false
-	if ok, _ := gocommons.Exists(metadataPath); ok {
-		exists = true
-	}
-	metadataFile, err = gocommons.Open(metadataPath, os.O_CREATE|os.O_RDWR, gocommons.GZ_FALSE)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to update metadata", err)
-		return
-	}
-
-	outMetadata := &OutMetadata{}
-	existingMetadata := &OutMetadata{}
-
-	if exists {
-		buf := new(bytes.Buffer)
-		if _, err = io.Copy(buf, metadataFile.File); err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to read metadata from existing file", err)
+		// File already exists..
+		// Change outPath i guess
+		var tmpfile *os.File
+		if tmpfile, err = gocommons.TempFile(resultOutDir, "dayStr-", ".gz"); err != nil {
+			err = errors.New(fmt.Sprintf("Failed to create a secondary out file since primary outfile exists: %v", err))
 			return
 		}
-		yaml.Unmarshal(buf.Bytes(), existingMetadata)
-		// Ensure that the device IDs are the same
-		//fmt.Println(outMetadata)
-		if strings.Compare(existingMetadata.DeviceId, work.DeviceId) != 0 {
-			panic(fmt.Sprintf("DeviceIDs don't match! YAML(%s) != work(%s)", outMetadata.DeviceId, work.DeviceId))
-		}
+		tmpfile.Close()
+		outPath = tmpfile.Name()
 	}
-	// We've already verified this if the file existed. So blindly overwrite
-	outMetadata.DeviceId = work.DeviceId
-	outMetadata.Versions = append(existingMetadata.Versions, work.Version)
-	outMetadata.PackageNames = append(existingMetadata.PackageNames, work.PackageName)
-	outMetadata.UploadTimestamps = append(existingMetadata.UploadTimestamps, work.UploadTimestamp)
-	outMetadata.StartTimestamps = append(existingMetadata.StartTimestamps, work.StartTimestamp)
-	outMetadata.EndTimestamps = append(existingMetadata.EndTimestamps, work.EndTimestamp)
 
-	metadataFile.Seek(0, os.SEEK_SET)
-	var writer gocommons.Writer
-	var bytes []byte
-	if writer, err = metadataFile.Writer(0); err != nil {
-		err = errors.New(fmt.Sprintf("Failed to get writer for metadata file: %v", err))
+	if ofile, err = gocommons.Open(outPath, os.O_CREATE|os.O_TRUNC|os.O_RDWR, gocommons.GZ_TRUE); err != nil {
+		err = errors.New(fmt.Sprintf("Failed to open outPath(%s) for writing sorted log data: %v", outPath, err))
 		return
 	}
-	if bytes, err = yaml.Marshal(outMetadata); err != nil {
-		err = errors.New(fmt.Sprintf("Failed to convert struct to yaml-bytes: %v", err))
+	if writer, err = ofile.Writer(0); err != nil {
+		err = errors.New(fmt.Sprintf("Failed to get writer to outPath(%s) for writing sorted log data: %v", outPath, err))
 		return
 	}
-	if _, err = writer.Write(bytes); err != nil {
-		err = errors.New(fmt.Sprintf("Failed to write metadata to file: %v", err))
-		return
-	}
-	writer.Flush()
-	writer.Close()
-	return
-}
+	defer writer.Close()
+	defer writer.Flush()
 
-/*
-// FIXME: Cannot random access GZIP streams. As a result, we cannot read
-// backwards without reading through all preceeding contents.
+	// TODO: Write metadata first.
 
-func UpdateStartEndTimestamps(work *DeviceWork) error {
-	var err error
-	var fstruct *gocommons.File
-	var reader *bufio.Scanner
-
-	if fstruct, reader, err = OpenFileAndReader(work.StagingFileName); err != nil {
-		return err
-	}
-	defer fstruct.Close()
-
-	for reader.Scan() {
-		line := reader.Text()
-		logline := ParseLogline(line)
-		if logline != nil {
-			work.StartTimestamp = logline.Datetime.UnixNano()
-			break
-		}
-	}
-
-	// Now we read the last line to find the last timestamp
-	lineChannel := make(chan string)
-	commChannel := make(chan struct{})
-	go ReadFileInReverse(fstruct.File, lineChannel, commChannel)
-	for {
-		line := <-lineChannel
-		logline := ParseLogline(line)
-		if logline != nil {
-			work.EndTimestamp = logline.Datetime.UnixNano()
-			close(commChannel)
-		} else {
-			commChannel <- struct{}{}
-		}
-	}
-	fmt.Println("Assigned start/end timestamps")
-	return err
-}
-
-func ReadFileInReverse(file *os.File, lineChannel chan string, commChannel chan struct{}) error {
-	var fileSize int64
-	var err error
-	var gzipReader *gzip.Reader
-
-	if gzipReader, err = gzip.NewReader(file); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to get gzipReader to file", err)
-		return err
-	}
-
-	if fileSize, err = file.Seek(0, os.SEEK_END); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to seek to end of file", err)
-		return err
-	}
-	// Keep looking in reverse in 1k chunks to find the first newline character
-	currentOffset := fileSize
-	buf := new(bytes.Buffer)
-	for {
-		chunkStart := (currentOffset - 1024)
-		if chunkStart < 0 {
-			chunkStart = 0
-		}
-
-		currentOffset -= 1024
-		if currentOffset < 0 {
-			currentOffset = 0
-		}
-
-		file.Seek(chunkStart, os.SEEK_SET)
-		var read int64
-		if read, err = io.CopyN(buf, file, 1024); err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to read from file", err)
-			return err
-		}
-		_ = read
-		chunk := buf.String()
+	// Now we have a bunch of chunks..we should be able to call n-way merge on this
+	sortedChannel := make(chan gocommons.SortInterface, 1000)
+	sortParams := *NewLoglineSortParams()
+	nWayMergeCallback := func(sortedChannel chan gocommons.SortInterface, quit chan bool) {
+		first := true
 		for {
-			if idx := strings.LastIndex(chunk, "\n"); idx != -1 {
-				// We found a '\n' and this is the last instance of it in this chunk
-				lastLine := chunk[idx+1:]
-				lineChannel <- lastLine
-				if _, ok := <-commChannel; !ok {
-					break
-				}
-				chunk = chunk[:idx]
-			} else {
+			obj, ok := <-sortedChannel
+			if !ok {
 				break
 			}
+
+			logline := obj.(*Logline)
+
+			// Add new line after every line
+			if !first {
+				writer.Write([]byte("\n"))
+			}
+			writer.Write([]byte(logline.String()))
 		}
-		if currentOffset < 0 {
-			currentOffset = 0
-		}
+		close(quit)
 	}
-	return err
+	if err = gocommons.NWayMergeGenerator(sortedFiles, sortParams, sortedChannel, nWayMergeCallback); err != nil {
+		err = errors.New(fmt.Sprintf("Failed NWayMergeGenerator(): %v", err))
+	}
+	return
 }
-*/

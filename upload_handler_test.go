@@ -4,16 +4,20 @@ import (
 	"bytes"
 	"compress/gzip"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/gurupras/gocommons"
 	"github.com/gurupras/gocommons/seekable_stream"
 	"github.com/gurupras/phonelab_backend"
+	"github.com/jehiah/go-strftime"
+	"github.com/pbnjay/strptime"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -100,7 +104,8 @@ func TestUpdateStagingMetadata(t *testing.T) {
 	// It also requires Work.DataStream. So add some (compressed) data to it
 	buf := new(bytes.Buffer)
 	gzipWriter := gzip.NewWriter(buf)
-	gzipWriter.Write([]byte("dummy data"))
+	line := GenerateLoglineForPayload("dummy data")
+	gzipWriter.Write([]byte(line))
 	gzipWriter.Flush()
 	gzipWriter.Close()
 
@@ -228,7 +233,8 @@ func TestHandleUpload(t *testing.T) {
 
 	compressedBuf := new(bytes.Buffer)
 	writer := gzip.NewWriter(compressedBuf)
-	writer.Write([]byte("Hello, world!"))
+	line := GenerateLoglineForPayload("Hello, world!")
+	writer.Write([]byte(line))
 	writer.Flush()
 	writer.Close()
 	compressedBytes := compressedBuf.Bytes()
@@ -253,7 +259,7 @@ func TestHandleUpload(t *testing.T) {
 
 	stagingConfig = new(phonelab_backend.StagingConfig)
 	uncompressedBuf := new(bytes.Buffer)
-	uncompressedBuf.WriteString("Hello, world!")
+	uncompressedBuf.WriteString(line)
 	work.DataStream = new(seekable_stream.SeekableStream)
 	work.DataStream.WrapReader(uncompressedBuf)
 
@@ -274,19 +280,20 @@ func TestHandleUpload(t *testing.T) {
 	assert.NotNil(err, "Should have errored")
 	stagingConfig.PostProcessing = stagingConfig.PostProcessing[:0]
 
+	// Now succeed
 	stagingConfig = new(phonelab_backend.StagingConfig)
 	stagingConfig.PostProcessing = append(stagingConfig.PostProcessing, errNoFail)
 	stagingConfig.PostProcessing = append(stagingConfig.PostProcessing, errNoFail)
 	dummyWorkChannel := make(chan *phonelab_backend.Work, 1000)
 
+	work.StagingDir = "/tmp/staging-TestHandleUpload"
 	work.StagingFileName = file.Name()
 	work.DataStream = new(seekable_stream.SeekableStream)
 	work.DataStream.WrapBytes(compressedBytes)
 
 	_, err = phonelab_backend.HandleUpload(compressedBuf, work, dummyWorkChannel, stagingConfig)
-	assert.Nil(err, "Should not have errored")
+	assert.Nil(err, "Should not have errored", err)
 	stagingConfig.PostProcessing = stagingConfig.PostProcessing[:0]
-
 }
 
 func TestHandleUploaderPost(t *testing.T) {
@@ -336,8 +343,9 @@ func TestHandleUploaderPost(t *testing.T) {
 	go server.Run()
 
 	buf := new(bytes.Buffer)
+	line := GenerateLoglineForPayload("Hello")
 	compressedWriter := gzip.NewWriter(buf)
-	compressedWriter.Write([]byte("Hello"))
+	compressedWriter.Write([]byte(line))
 	compressedWriter.Flush()
 	compressedWriter.Close()
 
@@ -356,26 +364,39 @@ func TestUpload(t *testing.T) {
 
 	var port int = 8084
 	var server *phonelab_backend.Server
-
-	defer Recover("TestUpload", assert)
+	var nDevices int = 1
+	var nFilesPerDevice int = 5
 
 	config := new(phonelab_backend.Config)
 
 	config.WorkChannel = make(chan *phonelab_backend.Work, 1000)
+	config.StagingConfig = phonelab_backend.InitializeStagingConfig()
 	config.ProcessingConfig = phonelab_backend.InitializeProcessingConfig()
+	config.ProcessingConfig.WorkSetCheckPeriod = 1 * time.Second
+	config.ProcessingConfig.DelayBeforeProcessing = 3 * time.Second
 
-	count := 0
+	count := int32(0)
+	expected := int32(nDevices * nFilesPerDevice)
+	// Create a waitgroup that we will use to signal back
+	wg := sync.WaitGroup{}
+	wg.Add(1)
 	countFn := func(work *phonelab_backend.DeviceWork) (err error, fail bool) {
-		count++
+		atomic.AddInt32(&count, int32(len(work.WorkList)))
+		logger.Debugln(fmt.Sprintf("Counted: %v", count))
+		if count == expected {
+			wg.Done()
+		}
 		return
 	}
 	config.ProcessingConfig.PostProcessing = append(config.ProcessingConfig.PostProcessing, countFn)
 
 	go RunTestServerAsync(port, config, &server)
 
-	UploadFiles(port, 3, 5, assert)
+	UploadFiles(port, nDevices, nFilesPerDevice, assert)
+	// Wait for the callback to signal that we're done
+	wg.Wait()
 	server.Stop()
-	assert.Equal(15, count, "Did not process expected # of uploaded files")
+	assert.Equal(expected, count, "Did not process expected # of uploaded files")
 	cleanup()
 }
 
@@ -468,4 +489,96 @@ func TestLoadCapability(t *testing.T) {
 	//TODO: Server stop logic
 	server.Stop()
 	//cleanup()
+}
+
+func TestDateMap(t *testing.T) {
+	//t.Parallel()
+
+	assert := assert.New(t)
+
+	now := time.Now()
+
+	dt := strptime.MustParse(strftime.Format("%Y-%M-%d", now), "%Y-%M-%d")
+	dm := make(map[time.Time]string)
+
+	dm[dt] = "exists"
+
+	new_dt := strptime.MustParse(strftime.Format("%Y-%M-%d", now), "%Y-%M-%d")
+
+	val, ok := dm[new_dt]
+	assert.True(ok, "Does not exist in map")
+	assert.Equal("exists", val, "Value did not match")
+}
+
+func TestSplitUploadToChunks(t *testing.T) {
+	//t.Parallel()
+
+	assert := assert.New(t)
+
+	defer Recover("TestUpload", assert)
+
+	var port int = 8087
+	var server *phonelab_backend.Server
+
+	// Set up a server with custom core function
+	config := new(phonelab_backend.Config)
+
+	config.WorkChannel = make(chan *phonelab_backend.Work)
+	config.ProcessingConfig = phonelab_backend.InitializeProcessingConfig()
+	config.ProcessingConfig.WorkSetCheckPeriod = 1 * time.Second
+	config.ProcessingConfig.DelayBeforeProcessing = 48 * time.Hour
+
+	count := int32(0)
+	countFn := func(work *phonelab_backend.DeviceWork, processingConfig *phonelab_backend.ProcessingConfig) (err error) {
+		logger.Infoln("Counted:", len(work.WorkList))
+		atomic.AddInt32(&count, int32(len(work.WorkList)))
+		if count == 2 {
+			server.Stop()
+		}
+		return
+	}
+	config.ProcessingConfig.Core = countFn
+
+	// Create a waitgroup and increment its count
+	// The countFn is responsible for signalling back by closing the server
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		RunTestServerAsync(port, config, &server)
+	}()
+
+	data := new(bytes.Buffer)
+	gzipWriter := gzip.NewWriter(data)
+
+	rlg1 := new(RandomLoglineGenerator)
+	rlg1.BootId = GenerateRandomBootId()
+	rlg1.StartTimestamp = strptime.MustParse("2016-01-01", "%Y-%m-%d")
+	rlg1.LastLogcatToken = 0
+	rlg1.LastLogcatTimestamp = rlg1.StartTimestamp
+	rlg1.MaxDelayBetweenLoglines = 100 * time.Millisecond
+
+	gzipWriter.Write([]byte(GenerateRandomLogline(rlg1)))
+
+	rlg2 := new(RandomLoglineGenerator)
+	rlg2.BootId = GenerateRandomBootId()
+	rlg2.StartTimestamp = strptime.MustParse("2016-01-04", "%Y-%m-%d")
+	rlg2.LastLogcatToken = 0
+	rlg2.LastLogcatTimestamp = rlg2.StartTimestamp
+	rlg2.MaxDelayBetweenLoglines = 100 * time.Millisecond
+
+	gzipWriter.Write([]byte(GenerateRandomLogline(rlg2)))
+	gzipWriter.Flush()
+	gzipWriter.Close()
+
+	// We now have 1 'file' containing logs from 2 dates.
+	// Upload this to check for correct split logic
+	// This is done by the count function
+	// The count function should result in a count of 2 for an upload count of 1
+	// You can see where we're going with this...
+	Upload(port, "dummy", data.String())
+	wg.Wait()
+	assert.Equal(int32(2), count, "Did not process expected # of uploaded files")
+	cleanup()
 }

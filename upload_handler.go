@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/fatih/set"
@@ -29,8 +30,6 @@ type StagingConfig struct {
 
 func InitializeStagingConfig() *StagingConfig {
 	sc := new(StagingConfig)
-	sc.PreProcessing = append(sc.PreProcessing, CreateStagingFile)
-	sc.PreProcessing = append(sc.PreProcessing, UpdateStagingMetadata)
 
 	sc.PostProcessing = append(sc.PostProcessing, MakeStagedFileReadOnly)
 	return sc
@@ -91,30 +90,24 @@ func UpdateStagingMetadataDates(metadata *StagingMetadata, work *Work) (err erro
 	// Step (1) is needed since io.Reader has no reset. Once we read it, we've consumed it.
 	// Therefore, we need to read it, and write it into a buffer and then use this buffer
 	// for all other processing
-	var reader io.Reader
 	var compressedReader *gzip.Reader
 	if compressedReader, err = gzip.NewReader(work.DataStream); err != nil {
-		//err = errors.New(fmt.Sprintf("Failed to obtain compressed reader to work.DataStream: %v", err))
-		err = nil
-		reader = work.DataStream
-	} else {
-		reader = compressedReader
+		err = errors.New(fmt.Sprintf("Failed to obtain compressed reader to work.DataStream: %v", err))
+		return
 	}
 
-	scanner := bufio.NewScanner(reader)
+	scanner := bufio.NewScanner(compressedReader)
 	scanner.Split(bufio.ScanLines)
 
 	set := set.NewNonTS()
 	var logline *Logline
 	for scanner.Scan() {
 		line := scanner.Text()
-		if logline, err = ParseLogline(line); err != nil {
-			// Weird...
-			continue
-		}
+		// If this fails, I guess we want it to crash
+		logline, _ = ParseLogline(line)
+
 		var dt time.Time
-		dt, err = strptime.Parse(strftime.Format("%Y-%m-%d", logline.Datetime), "%Y-%m-%d")
-		if err != nil {
+		if dt, err = strptime.Parse(strftime.Format("%Y-%m-%d", logline.Datetime), "%Y-%m-%d"); err != nil {
 			err = errors.New(fmt.Sprintf("Failed to get datetime of line: %v: %v", line, err))
 			return err
 		}
@@ -143,18 +136,40 @@ func RunStagingProcesses(functions []StagingProcess, work *Work) (errs []error, 
 	return
 }
 
+// Gets the name of a new temp file..but the file does not exist
+func GetTempFile(dir, prefix string, suffix ...string) (string, error) {
+	var err error
+	var file *os.File
+	if err = gocommons.Makedirs(dir); err != nil {
+		err = errors.New(fmt.Sprintf("Failed to create dir for GetTempFile: %v", err))
+		return "", err
+	}
+	if file, err = gocommons.TempFile(dir, prefix, suffix...); err != nil {
+		err = errors.New(fmt.Sprintf("Failed to create temporary file: %v", err))
+		return "", err
+	}
+
+	file.Close()
+	os.Remove(file.Name())
+	return file.Name(), err
+}
+
 func CreateStagingFile(work *Work) (err error, fail bool) {
 	// Mandatory step
 	fail = true
 
 	var file *os.File
+	var fileName string
 
-	gocommons.Makedirs(work.StagingDir)
-	if file, err = gocommons.TempFile(work.StagingDir, "log-", ".gz"); err != nil {
-		err = errors.New(fmt.Sprintf("Failed to create temporary file: %v", err))
+	if fileName, err = GetTempFile(work.StagingDir, "log-", ".gz"); err != nil {
+		err = errors.New(fmt.Sprintf("Failed CreateStagingFile: %v", err))
 		return
 	}
-	file.Close()
+
+	if file, err = os.OpenFile(fileName, os.O_CREATE|os.O_TRUNC|os.O_RDONLY, 0664); err != nil {
+		err = errors.New(fmt.Sprintf("Failed CreateStagingFile: %v", err))
+		return
+	}
 
 	// Now do the staging part
 	work.StagingFileName = file.Name()
@@ -174,9 +189,20 @@ func MakeStagedFileReadOnly(work *Work) (err error, fail bool) {
 }
 
 func HandleUpload(input io.Reader, work *Work, workChannel chan *Work, stagingConfig *StagingConfig) (bytesWritten int64, err error) {
-	var fail bool
+	var fail bool = true
 	var errs []error
 
+	if work == nil {
+		err = errors.New("Work is nil")
+		return
+	}
+	// Update work.StagingFileName
+	if work.StagingFileName, err = GetTempFile(work.StagingDir, "log-", ".gz"); err != nil {
+		err = errors.New(fmt.Sprintf("Failed to update work.StagingFileName: %v", err))
+		return
+	}
+
+	// Pre-processing
 	if errs, fail = RunStagingProcesses(stagingConfig.PreProcessing, work); len(errs) > 0 && fail {
 		err = errors.New(fmt.Sprintf("Stopping HandleUpload due to fail condition...\nerrors:\n%v\n", errs))
 		return
@@ -184,19 +210,80 @@ func HandleUpload(input io.Reader, work *Work, workChannel chan *Work, stagingCo
 		fmt.Fprintln(os.Stderr, errs)
 	}
 
-	fstruct, err := gocommons.Open(work.StagingFileName, os.O_APPEND|os.O_WRONLY, gocommons.GZ_TRUE)
-	if err != nil {
-		err = errors.New(fmt.Sprintf("Could not open tempfile: %v: %v", work.StagingFileName, err))
+	// Update staging metadata dates
+	if err = UpdateStagingMetadataDates(&work.StagingMetadata, work); err != nil {
+		err = errors.New(fmt.Sprintf("Failed UpdateStagingMetadataDates: %v", err))
 		return
 	}
+	// We still haven't written the metadata to the file. This will be
+	// done for each chunk
 
-	fstruct.Seek(0, os.SEEK_END)
+	// Split the file into chunks depending on number of dates present
+	originalWork := work
+	// Remove extension
+	basename := filepath.Base(work.StagingFileName)
+	ext := filepath.Ext(basename)
+	fileName := filepath.Join(work.StagingDir, basename[:len(basename)-len(ext)])
 
-	// Cannot fail unless the file somehow changed to RDONLY between opening and this statement
-	writer, _ := fstruct.Writer(0)
+	chunkMap := make(map[time.Time]*Work)
 
-	// Do the payload copy
-	// The stream is already compressed
+	//fmt.Println("Dates:", work.StagingMetadata.Dates)
+	// Split
+	for idx, date := range work.StagingMetadata.Dates {
+		var chunkName string
+		var chunkWork *Work = new(Work)
+		*chunkWork = *originalWork
+		chunkWork.StagingMetadata.Dates = []time.Time{date}
+
+		if idx > 1 {
+			chunkName = fmt.Sprintf("%v-%v", fileName, idx)
+		} else {
+			chunkName = fileName
+		}
+
+		// Add back the .gz
+		chunkName += ".gz"
+
+		chunkWork.StagingFileName = chunkName
+		// Create the file
+		var file *os.File
+		if file, err = os.OpenFile(chunkName, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0664); err != nil {
+			err = errors.New(fmt.Sprintf("Failed to create chunk file: %v", err))
+			return
+		}
+		file.Close()
+
+		// Now that the file is created, update its metadata
+		if err, fail = UpdateStagingMetadata(chunkWork); err != nil {
+			err = errors.New(fmt.Sprintf("Failed to update staging metadata for chunk: %v", err))
+			if fail {
+				return
+			}
+		}
+		chunkMap[date] = chunkWork
+	}
+
+	//First, open all chunk files and maintain the pointers so we can just
+	// write to the corresponding files
+	dateChunkWriterMap := make(map[time.Time]gocommons.Writer)
+	for date, chunkWork := range chunkMap {
+		//fmt.Println(fmt.Sprintf("%v -> %v", chunkWork.StagingFileName, date))
+		var fstruct *gocommons.File
+		fstruct, err = gocommons.Open(chunkWork.StagingFileName, os.O_APPEND|os.O_WRONLY, gocommons.GZ_TRUE)
+		if err != nil {
+			err = errors.New(fmt.Sprintf("Could not open tempfile: %v: %v", chunkWork.StagingFileName, err))
+			return
+		}
+
+		fstruct.Seek(0, os.SEEK_END)
+
+		// Cannot fail unless the file somehow changed to RDONLY between opening and this statement
+		writer, _ := fstruct.Writer(0)
+
+		dateChunkWriterMap[date] = writer
+	}
+
+	// Now, start reading the input stream and writing to chunks
 	var compressedInput *gzip.Reader
 	var inputReader io.Reader
 
@@ -207,24 +294,61 @@ func HandleUpload(input io.Reader, work *Work, workChannel chan *Work, stagingCo
 		inputReader = compressedInput
 	}
 
-	// Cannot fail unless we somehow run out of disk space during the copy
-	if bytesWritten, err = io.Copy(&writer, inputReader); err != nil {
-		err = errors.New(fmt.Sprintf("Failed to copy input to %v: %v", work.StagingFileName, err))
-		return
+	scanner := bufio.NewScanner(inputReader)
+	scanner.Split(bufio.ScanLines)
+
+	// Now, write line by line
+	var logline *Logline
+	dataMap := make(map[time.Time][]string)
+	for date, _ := range chunkMap {
+		dataMap[date] = make([]string, 0)
 	}
-	// We want to flush/close before post processing. So do that now
-	writer.Close()
-	fstruct.Close()
+	for scanner.Scan() {
+		line := scanner.Text()
+		line = strings.TrimSpace(line)
+
+		if logline, err = ParseLogline(line); err != nil {
+			err = errors.New(fmt.Sprintf("Failed to parse logline while writing to chunk: %v", err))
+			return
+		}
+
+		dateStr := strftime.Format("%Y-%m-%d", logline.Datetime)
+		date := strptime.MustParse(dateStr, "%Y-%m-%d")
+
+		if _, ok := dataMap[date]; !ok {
+			err = errors.New(fmt.Sprintf("date:%v does not have an entry in dataMap", date))
+			return
+		}
+		dataMap[date] = append(dataMap[date], line)
+	}
+	for date, writer := range dateChunkWriterMap {
+		// Find writer based on this date
+		data := dataMap[date]
+		if len(data) == 0 {
+			// Nothing to write here?
+			continue
+		}
+		writer.Write([]byte(strings.Join(dataMap[date], "\n")))
+		// We want to flush/close before post processing. So do that now
+		writer.Flush()
+		writer.Close()
+	}
 
 	// Now post processing
-	if errs, fail = RunStagingProcesses(stagingConfig.PostProcessing, work); len(errs) > 0 && fail {
-		err = errors.New(fmt.Sprintf("Stopping HandleUpload due to fail condition...\nerrors:\n%v\n", errs))
-		return
-	} else if len(errs) > 0 {
-		fmt.Fprintln(os.Stderr, errs)
+	// Run for each chunk
+	for _, chunkWork := range chunkMap {
+		if errs, fail = RunStagingProcesses(stagingConfig.PostProcessing, chunkWork); len(errs) > 0 && fail {
+			err = errors.New(fmt.Sprintf("Stopping HandleUpload due to fail condition...\nerrors:\n%v\n", errs))
+			return
+		} else if len(errs) > 0 {
+			fmt.Fprintln(os.Stderr, errs)
+		}
 	}
 
-	workChannel <- work
+	// Write all chunks to workChannel
+	for _, chunkWork := range chunkMap {
+		workChannel <- chunkWork
+	}
 	return
 }
 
@@ -248,8 +372,17 @@ func HandleUploaderPost(c echo.Context, config *Config) (err error) {
 	work.DataStream = new(seekable_stream.SeekableStream)
 	work.DataStream.WrapReader(body)
 
+	// Test stream for compression.
+	if _, err = gzip.NewReader(work.DataStream); err != nil {
+		err = errors.New(fmt.Sprintf("POST data is not compressed: %v", err))
+		return c.String(http.StatusInternalServerError, err.Error())
+	}
+
+	// Rewind the stream
+	work.DataStream.Rewind()
+
 	work.StagingDir = filepath.Join(config.StagingDir, deviceId)
-	work.OutDir = filepath.Join(config.OutDir, deviceId)
+	work.OutDir = config.OutDir
 
 	if _, err = HandleUpload(body, work, config.WorkChannel, config.StagingConfig); err != nil {
 		return c.String(http.StatusInternalServerError, err.Error())

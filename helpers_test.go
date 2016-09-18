@@ -174,8 +174,13 @@ func DeviceDataGenerator(deviceId string, port int, commChannel chan interface{}
 
 		for currentSize < randomSize {
 			line := <-logChannel
+			line = strings.TrimSpace(line)
 
-			fileWriter.Write([]byte(line))
+			if currentSize == 0 {
+				fileWriter.Write([]byte(line))
+			} else {
+				fileWriter.Write([]byte("\n" + line))
+			}
 			currentSize += len(line)
 		}
 		fileWriter.Flush()
@@ -323,7 +328,7 @@ func RunTestServerAsync(port int, config *phonelab_backend.Config, serverPtr **p
 		defer pendingWorkHandlerWg.Done()
 		phonelab_backend.PendingWorkHandler(config)
 	}()
-	*serverPtr, err = phonelab_backend.SetupServer(port, config, false)
+	*serverPtr, err = phonelab_backend.SetupServer(port, config, true)
 	if err != nil {
 		panic(err)
 	}
