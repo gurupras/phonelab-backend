@@ -405,7 +405,8 @@ func TestDeviceDataGeneratorCompression(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	logger = logrus.New()
-	logger.Level = logrus.ErrorLevel
+	logger.Level = logrus.DebugLevel
+	phonelab_backend.InitLogger([]*logrus.Logger{logger}...)
 
 	if strings.Compare(testDirBase, "") == 0 {
 		testDirBase = "/tmp"

@@ -5,12 +5,27 @@ import (
 	"os"
 	"sync"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/gurupras/go-stoppableNetListener"
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/engine"
 	"github.com/labstack/echo/engine/fasthttp"
 	"github.com/labstack/echo/middleware"
 )
+
+var (
+	logger *logrus.Logger
+)
+
+func InitLogger(loggers ...*logrus.Logger) {
+	if loggers != nil && len(loggers) != 0 {
+		logger = loggers[0]
+	} else {
+		// By default, we're at panic level
+		logger = logrus.New()
+		logger.Level = logrus.PanicLevel
+	}
+}
 
 type Server struct {
 	*echo.Echo

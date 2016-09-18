@@ -140,6 +140,7 @@ func DeviceWorkHandler(deviceId string, workChannel chan *Work, processingConfig
 
 		processRoutine := func(workList []*Work, processingConfig *ProcessingConfig) {
 			defer processWg.Done()
+			logger.Debugln(fmt.Sprintf("%s -> Merging %d files to out", deviceId, len(workList)))
 			if err = ProcessProcessConfig(workList, processingConfig); err != nil {
 				// TODO: What should we do here?
 				// We're in a goroutine, and so, should we
@@ -178,6 +179,7 @@ func DeviceWorkHandler(deviceId string, workChannel chan *Work, processingConfig
 				}
 
 			}
+			//logger.Debugln(fmt.Sprintf("%s -> Remaining work (%d)", deviceId, len(workSet.List())))
 
 			for _, obj := range datesToProcess.List() {
 				date := obj.(time.Time)
@@ -194,14 +196,19 @@ func DeviceWorkHandler(deviceId string, workChannel chan *Work, processingConfig
 
 	var work *Work
 	var ok bool
+	received := int64(0)
 	for {
 		if work, ok = <-workChannel; !ok {
 			break
 		}
 
+		received++
+		//logger.Debugln(fmt.Sprintf("%s -> #Work: %d", deviceId, received))
+
 		// Just keep appending to an array of work and let the
 		// internal goroutine schedule these when applicable
 		workSet.Add(work)
+		//logger.Debugln(fmt.Sprintf("%s -> workSet.size(): %d", deviceId, workSet.Size()))
 	}
 	//XXX: Wait for all work to complete
 	for {
