@@ -63,6 +63,7 @@ func ProcessStage(functions []ProcessingFunction, work *DeviceWork) (errs []erro
 
 func ProcessProcessConfig(workList []*Work, processingConfig *ProcessingConfig) (err error) {
 	if workList == nil || len(workList) == 0 {
+		err = errors.New(fmt.Sprintf("No work to process..why was this function called with no work?"))
 		return
 	}
 
@@ -96,9 +97,7 @@ func ProcessProcessConfig(workList []*Work, processingConfig *ProcessingConfig) 
 }
 
 func ProcessStagedWork(deviceWork *DeviceWork, processingConfig *ProcessingConfig) (err error) {
-	if len(deviceWork.WorkList) == 0 {
-		return
-	}
+	// Zero length/nil WorkList had better been caught and thrown by now
 
 	// First, we need to sort each chunk in the WorkList
 	// Then we update the metadata on the output file
