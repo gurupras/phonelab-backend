@@ -21,18 +21,21 @@ import (
 	"github.com/pbnjay/strptime"
 )
 
-type StagingProcess func(work *Work) (error, bool)
-
-type StagingConfig struct {
-	PreProcessing  []StagingProcess
-	PostProcessing []StagingProcess
+type Work struct {
+	UploadMetadata
+	StagingMetadata StagingMetadata
+	StagingFileName string
+	StagingDir      string
+	OutDir          string
+	DataStream      *seekable_stream.SeekableStream
 }
 
-func InitializeStagingConfig() *StagingConfig {
-	sc := new(StagingConfig)
-
-	sc.PostProcessing = append(sc.PostProcessing, MakeStagedFileReadOnly)
-	return sc
+type UploadMetadata struct {
+	Version         string `yaml:version`
+	DeviceId        string `yaml:device_id`
+	PackageName     string `yaml:package_name`
+	UploadTimestamp int64  `yaml:upload_timestamp`
+	UploadFileName  string
 }
 
 func UpdateStagingMetadata(work *Work) (err error, fail bool) {

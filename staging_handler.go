@@ -15,29 +15,18 @@ import (
 
 	"github.com/fatih/set"
 	"github.com/gurupras/gocommons"
-	"github.com/gurupras/gocommons/seekable_stream"
 )
 
-type UploadMetadata struct {
-	Version         string `yaml:version`
-	DeviceId        string `yaml:device_id`
-	PackageName     string `yaml:package_name`
-	UploadTimestamp int64  `yaml:upload_timestamp`
-	UploadFileName  string
+type StagingProcess func(work *Work) (error, bool)
+
+type StagingConfig struct {
+	PreProcessing  []StagingProcess
+	PostProcessing []StagingProcess
 }
 
 type StagingMetadata struct {
 	UploadMetadata
 	Dates []time.Time `yaml:dates`
-}
-
-type Work struct {
-	UploadMetadata
-	StagingMetadata StagingMetadata
-	StagingFileName string
-	StagingDir      string
-	OutDir          string
-	DataStream      *seekable_stream.SeekableStream
 }
 
 type Config struct {
@@ -58,6 +47,13 @@ func (c *Config) CloseWorkChannel() {
 var (
 	DeviceWorkChannel map[string]chan *Work
 )
+
+func InitializeStagingConfig() *StagingConfig {
+	sc := new(StagingConfig)
+
+	sc.PostProcessing = append(sc.PostProcessing, MakeStagedFileReadOnly)
+	return sc
+}
 
 func MakeStagedFilesPending(config *Config) error {
 	var err error
