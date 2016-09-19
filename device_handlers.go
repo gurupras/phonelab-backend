@@ -191,10 +191,13 @@ func ProcessStagedWork(deviceWork *DeviceWork, processingConfig *ProcessingConfi
 			logline := obj.(*Logline)
 
 			// Add new line after every line
-			if !first {
-				writer.Write([]byte("\n"))
+			if first {
+				// First line..don't prefix newline
+				writer.Write([]byte(logline.String()))
+				first = false
+			} else {
+				writer.Write([]byte("\n" + logline.String()))
 			}
-			writer.Write([]byte(logline.String()))
 		}
 		close(quit)
 	}
