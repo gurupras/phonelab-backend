@@ -210,6 +210,9 @@ func DeviceWorkHandler(deviceId string, workChannel chan *Work, processingConfig
 		workSet.Add(work)
 		//logger.Debugln(fmt.Sprintf("%s -> workSet.size(): %d", deviceId, workSet.Size()))
 	}
+
+	logger.Debugln(fmt.Sprintf("%s -> workChannel closed..waiting for all pending work to complete", deviceId))
+
 	//XXX: Wait for all work to complete
 	for {
 		size := workSet.Size()
@@ -219,6 +222,7 @@ func DeviceWorkHandler(deviceId string, workChannel chan *Work, processingConfig
 			break
 		}
 	}
+	// Signal workset processor to stop
 	atomic.AddInt32(&stop, 1)
 	processWorkSetWg.Wait()
 	if statusChannel != nil {
@@ -270,10 +274,12 @@ func PendingWorkHandler(config *Config) {
 		deviceWorkChannel <- work
 		delegated++
 	}
+	logger.Debugln("config.WorkChannel closed..stopping all device work channels")
 
 	for device := range DeviceWorkChannel {
 		close(DeviceWorkChannel[device])
 	}
+	logger.Debugln("Stopped all device work channels..waiting for all device work handlers to return")
 	wg.Wait()
-	//fmt.Println(fmt.Sprintf("Delegated %d tasks", delegated))
+	logger.Debugln(fmt.Sprintf("PendingWorkHandler() finished!  Delegated %d tasks", delegated))
 }
