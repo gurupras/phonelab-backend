@@ -103,7 +103,7 @@ func UpdateStagingMetadataDates(metadata *StagingMetadata, work *Work) (err erro
 	var logline *Logline
 	for scanner.Scan() {
 		line := scanner.Text()
-		// If this fails, I guess we want it to crash
+		// Sometimes, we get weird lines
 		logline, _ = ParseLogline(line)
 
 		var dt time.Time
