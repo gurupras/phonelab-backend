@@ -3,9 +3,11 @@ package phonelab_backend_test
 import (
 	"bytes"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/gurupras/phonelab_backend"
 	"github.com/labstack/echo"
 	"github.com/parnurzeal/gorequest"
@@ -26,6 +28,72 @@ func postRequest(port int) (gorequest.Response, []error) {
 
 func testHttpMethod(c echo.Context) (err error) {
 	return c.String(200, "OK")
+}
+
+type Hook struct {
+	Callback func(entry *logrus.Entry) (err error)
+}
+
+func (h Hook) Levels() []logrus.Level {
+	return logrus.AllLevels
+}
+
+func (h Hook) Fire(entry *logrus.Entry) (err error) {
+	return h.Callback(entry)
+}
+
+func TestInitLogger(t *testing.T) {
+	//t.Parallel()
+
+	assert := assert.New(t)
+
+	wg := sync.WaitGroup{}
+
+	var message string
+	var testLogger *logrus.Logger
+
+	hook := Hook{}
+	hook.Callback = func(entry *logrus.Entry) (err error) {
+		defer wg.Done()
+		assert.Equal(message, entry.Message, "Messages don't match")
+		return nil
+	}
+
+	// Negative tests
+	// test nil? size loggers
+	var nilLoggers []*logrus.Logger
+	phonelab_backend.InitLogger(nilLoggers...)
+	testLogger = phonelab_backend.GetLogger()
+	message = "Testing InitLogger() with nil loggers"
+	wg.Add(1)
+	testLogger.Hooks.Add(hook)
+	testLogger.Debugln(message)
+	wg.Wait()
+	testLogger.Hooks = make(logrus.LevelHooks)
+
+	// len 0
+	loggers := []*logrus.Logger{}
+	phonelab_backend.InitLogger(loggers...)
+	testLogger = phonelab_backend.GetLogger()
+	message = "Testing InitLogger() with len 0"
+	wg.Add(1)
+	testLogger.Hooks.Add(hook)
+	testLogger.Debugln(message)
+	wg.Wait()
+	testLogger.Hooks = make(logrus.LevelHooks)
+
+	// Now test custom testLogger
+	testLogger = logrus.New()
+	testLogger.Level = logrus.DebugLevel
+	message = "Testing InitLogger() with custom testLogger"
+	wg.Add(1)
+	testLogger.Hooks.Add(hook)
+	phonelab_backend.InitLogger([]*logrus.Logger{testLogger}...)
+	serverLogger := phonelab_backend.GetLogger()
+	assert.Equal(testLogger, serverLogger, "Loggers don't match")
+	testLogger.Debugln(message)
+	wg.Wait()
+	testLogger.Hooks = make(logrus.LevelHooks)
 }
 
 func TestServerConstructor(t *testing.T) {
