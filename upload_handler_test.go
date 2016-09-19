@@ -42,7 +42,7 @@ func TestStaging(t *testing.T) {
 
 	defer Recover("TestStaging", assert)
 
-	dummyWork := func(work *phonelab_backend.DeviceWork, processingConfig *phonelab_backend.ProcessingConfig) (err error) {
+	dummyWork := func(work *phonelab_backend.ProcessingWork, processingConfig *phonelab_backend.ProcessingConfig) (err error) {
 		// Dummy work function. We're only testing whether server
 		// correctly receives upload and stages it
 		return
@@ -203,7 +203,7 @@ func TestAddStagingMetadata(t *testing.T) {
 	config.OutDir = outDirBase
 
 	config.ProcessingConfig = new(phonelab_backend.ProcessingConfig)
-	dummyWork := func(work *phonelab_backend.DeviceWork, processingConfig *phonelab_backend.ProcessingConfig) (err error) {
+	dummyWork := func(work *phonelab_backend.ProcessingWork, processingConfig *phonelab_backend.ProcessingConfig) (err error) {
 		// Do nothing. We're only testing adding staging metadata
 		return
 	}
@@ -380,7 +380,7 @@ func TestUpload(t *testing.T) {
 	// Create a waitgroup that we will use to signal back
 	wg := sync.WaitGroup{}
 	wg.Add(1)
-	countFn := func(work *phonelab_backend.DeviceWork) (err error, fail bool) {
+	countFn := func(work *phonelab_backend.ProcessingWork) (err error, fail bool) {
 		atomic.AddInt32(&count, int32(len(work.WorkList)))
 		logger.Debugln(fmt.Sprintf("Counted: %v", count))
 		if count == expected {
@@ -529,7 +529,7 @@ func TestSplitUploadToChunks(t *testing.T) {
 	config.ProcessingConfig.DelayBeforeProcessing = 48 * time.Hour
 
 	count := int32(0)
-	countFn := func(work *phonelab_backend.DeviceWork, processingConfig *phonelab_backend.ProcessingConfig) (err error) {
+	countFn := func(work *phonelab_backend.ProcessingWork, processingConfig *phonelab_backend.ProcessingConfig) (err error) {
 		logger.Infoln("Counted:", len(work.WorkList))
 		atomic.AddInt32(&count, int32(len(work.WorkList)))
 		if count == 2 {

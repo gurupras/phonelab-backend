@@ -12,7 +12,7 @@ import (
 
 var ()
 
-type DeviceWork struct {
+type ProcessingWork struct {
 	WorkList       []*Work
 	DeviceId       string
 	OutFile        *gocommons.File
@@ -29,11 +29,11 @@ type OutMetadata struct {
 	Tags             []string `yaml:tags`
 }
 
-type ProcessingFunction func(work *DeviceWork) (error, bool)
+type ProcessingFunction func(work *ProcessingWork) (error, bool)
 
 type ProcessingConfig struct {
 	PreProcessing         []ProcessingFunction
-	Core                  func(deviceWork *DeviceWork, processingConfig *ProcessingConfig) error
+	Core                  func(processingWork *ProcessingWork, processingConfig *ProcessingConfig) error
 	PostProcessing        []ProcessingFunction
 	DelayBeforeProcessing time.Duration
 	WorkSetCheckPeriod    time.Duration
@@ -47,7 +47,7 @@ func InitializeProcessingConfig() *ProcessingConfig {
 	return pc
 }
 
-func ProcessStage(functions []ProcessingFunction, work *DeviceWork) (errs []error, fail bool) {
+func ProcessStage(functions []ProcessingFunction, work *ProcessingWork) (errs []error, fail bool) {
 	var err error
 	for _, fn := range functions {
 		if err, fail = fn(work); err != nil {
@@ -67,7 +67,7 @@ func ProcessProcessConfig(workList []*Work, processingConfig *ProcessingConfig) 
 		return
 	}
 
-	deviceWork := &DeviceWork{
+	processingWork := &ProcessingWork{
 		WorkList: workList,
 		DeviceId: workList[0].DeviceId,
 	}
@@ -75,28 +75,28 @@ func ProcessProcessConfig(workList []*Work, processingConfig *ProcessingConfig) 
 	var errs []error
 	var fail bool
 	//fmt.Println("Starting pre-processing")
-	if errs, fail = ProcessStage(processingConfig.PreProcessing, deviceWork); len(errs) > 0 && fail {
+	if errs, fail = ProcessStage(processingConfig.PreProcessing, processingWork); len(errs) > 0 && fail {
 		err = errors.New(fmt.Sprintf("Stopping ProcessProcessConfig due to fail condition...\nerrors:\n%v\n", errs))
 		return
 	}
-	//logger.Debugln(fmt.Sprintf("%s -> Finished pre-processing", deviceWork.DeviceId))
+	//logger.Debugln(fmt.Sprintf("%s -> Finished pre-processing", processingWork.DeviceId))
 
 	// FIXME: For some reason TestUpload is stuck in this
-	if err = processingConfig.Core(deviceWork, processingConfig); err != nil {
+	if err = processingConfig.Core(processingWork, processingConfig); err != nil {
 		err = errors.New(fmt.Sprintf("Failed core processing: %v", err))
 		return
 	}
-	//logger.Debugln(fmt.Sprintf("%s -> Finished core", deviceWork.DeviceId))
+	//logger.Debugln(fmt.Sprintf("%s -> Finished core", processingWork.DeviceId))
 
-	if errs, fail = ProcessStage(processingConfig.PostProcessing, deviceWork); len(errs) > 0 && fail {
+	if errs, fail = ProcessStage(processingConfig.PostProcessing, processingWork); len(errs) > 0 && fail {
 		err = errors.New(fmt.Sprintf("Stopping ProcessProcessConfig due to fail condition...\nerrors:\n%v\n", errs))
 		return
 	}
-	//logger.Debugln(fmt.Sprintf("%s -> Finished post-processing", deviceWork.DeviceId))
+	//logger.Debugln(fmt.Sprintf("%s -> Finished post-processing", processingWork.DeviceId))
 	return
 }
 
-func ProcessStagedWork(deviceWork *DeviceWork, processingConfig *ProcessingConfig) (err error) {
+func ProcessStagedWork(processingWork *ProcessingWork, processingConfig *ProcessingConfig) (err error) {
 	// Zero length/nil WorkList had better been caught and thrown by now
 
 	// First, we need to sort each chunk in the WorkList
@@ -105,10 +105,10 @@ func ProcessStagedWork(deviceWork *DeviceWork, processingConfig *ProcessingConfi
 	// TODO: Then, we move it to wherever it is supposed to go
 
 	// Date corresponding to this work
-	date := deviceWork.WorkList[0].StagingMetadata.Dates[0]
+	date := processingWork.WorkList[0].StagingMetadata.Dates[0]
 
-	outDirBase := deviceWork.WorkList[0].OutDir
-	deviceOutDir := filepath.Join(outDirBase, deviceWork.DeviceId)
+	outDirBase := processingWork.WorkList[0].OutDir
+	deviceOutDir := filepath.Join(outDirBase, processingWork.DeviceId)
 	// Final out dir
 	yearStr := fmt.Sprintf("%v", date.Year())
 	monthStr := fmt.Sprintf("%v", date.Month())
@@ -119,14 +119,14 @@ func ProcessStagedWork(deviceWork *DeviceWork, processingConfig *ProcessingConfi
 		return
 	}
 
-	sortedDirBase := filepath.Join(deviceWork.WorkList[0].StagingDir, "sorted")
+	sortedDirBase := filepath.Join(processingWork.WorkList[0].StagingDir, "sorted")
 	if err = gocommons.Makedirs(sortedDirBase); err != nil {
 		err = errors.New(fmt.Sprintf("Failed to create directory for sorted files: %v", err))
 		return err
 	}
 
 	sortedFiles := make([]string, 0)
-	for _, chunkWork := range deviceWork.WorkList {
+	for _, chunkWork := range processingWork.WorkList {
 		fileName := filepath.Base(chunkWork.StagingFileName)
 		sortedFile := filepath.Join(sortedDirBase, fileName)
 

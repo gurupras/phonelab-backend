@@ -21,30 +21,30 @@ func TestProcessProcessWork(t *testing.T) {
 	defer Recover("TestProcessStagedWork", assert)
 
 	// Test for nil work list
-	deviceWork := new(phonelab_backend.DeviceWork)
-	deviceWork.WorkList = nil
-	err = phonelab_backend.ProcessProcessConfig(deviceWork.WorkList, nil)
+	processingWork := new(phonelab_backend.ProcessingWork)
+	processingWork.WorkList = nil
+	err = phonelab_backend.ProcessProcessConfig(processingWork.WorkList, nil)
 	assert.NotNil(err, "Expected error for device work with nil WorkList")
 
 	// Now test zero length work list
-	deviceWork.WorkList = make([]*phonelab_backend.Work, 0)
-	err = phonelab_backend.ProcessProcessConfig(deviceWork.WorkList, nil)
+	processingWork.WorkList = make([]*phonelab_backend.Work, 0)
+	err = phonelab_backend.ProcessProcessConfig(processingWork.WorkList, nil)
 	assert.NotNil(err, "Expected error for device work with zero length WorkList")
 
 	processingConfig := new(phonelab_backend.ProcessingConfig)
 	processingConfig.WorkSetCheckPeriod = 1 * time.Second
 	processingConfig.DelayBeforeProcessing = 3 * time.Second
 
-	dummyCore := func(work *phonelab_backend.DeviceWork, processingConfig *phonelab_backend.ProcessingConfig) (err error) {
+	dummyCore := func(work *phonelab_backend.ProcessingWork, processingConfig *phonelab_backend.ProcessingConfig) (err error) {
 		return
 	}
 
-	dummyCoreThrowsError := func(work *phonelab_backend.DeviceWork, processingConfig *phonelab_backend.ProcessingConfig) (err error) {
+	dummyCoreThrowsError := func(work *phonelab_backend.ProcessingWork, processingConfig *phonelab_backend.ProcessingConfig) (err error) {
 		return errors.New("Expected")
 	}
 
 	// Test for error handling
-	errFn := func(work *phonelab_backend.DeviceWork) (error, bool) {
+	errFn := func(work *phonelab_backend.ProcessingWork) (error, bool) {
 		// Just throw an error
 		logger.Debug("Throwing error")
 		return errors.New("Expected"), true
@@ -95,14 +95,14 @@ func TestProcessProcessWork(t *testing.T) {
 	wg := sync.WaitGroup{}
 	mutex := sync.Mutex{}
 
-	preProcess := func(w *phonelab_backend.DeviceWork) (err error, fail bool) {
+	preProcess := func(w *phonelab_backend.ProcessingWork) (err error, fail bool) {
 		log.Info("preProcess")
 		mutex.Lock()
 		started += len(w.WorkList)
 		mutex.Unlock()
 		return
 	}
-	postProcess := func(w *phonelab_backend.DeviceWork) (err error, fail bool) {
+	postProcess := func(w *phonelab_backend.ProcessingWork) (err error, fail bool) {
 		mutex.Lock()
 		verified += len(w.WorkList)
 		log.Info("Verified:", verified)
@@ -112,7 +112,7 @@ func TestProcessProcessWork(t *testing.T) {
 		mutex.Unlock()
 		return
 	}
-	customCore := func(w *phonelab_backend.DeviceWork, processingConfig *phonelab_backend.ProcessingConfig) error {
+	customCore := func(w *phonelab_backend.ProcessingWork, processingConfig *phonelab_backend.ProcessingConfig) error {
 		return phonelab_backend.ProcessStagedWork(w, processingConfig)
 	}
 	config.ProcessingConfig.Core = customCore
