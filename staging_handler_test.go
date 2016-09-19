@@ -51,7 +51,7 @@ func TestDeviceWorkHandler(t *testing.T) {
 	countFn := func(work *phonelab_backend.ProcessingWork, processingConfig *phonelab_backend.ProcessingConfig) (err error) {
 		countMutex.Lock()
 		defer countMutex.Unlock()
-		count++
+		count += len(work.WorkList)
 		return
 	}
 
