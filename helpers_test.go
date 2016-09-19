@@ -82,7 +82,8 @@ func DataGenerator(channel chan string, stop chan interface{}) {
 		rlg = new(RandomLoglineGenerator)
 		rlg.BootId = GenerateRandomBootId()
 		rlg.LastLogcatToken = 0
-		rlg.StartTimestamp = time.Now()
+		now := time.Now()
+		rlg.StartTimestamp = time.Date(2016, 1, 1, 0, 0, 0, 0, now.Location())
 		rlg.LastLogcatTimestamp = rlg.StartTimestamp
 		rlg.MaxDelayBetweenLoglines = 4 * time.Second
 	}
