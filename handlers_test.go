@@ -150,12 +150,14 @@ func TestPendingWorkHandler(t *testing.T) {
 			config.WorkChannel <- work
 			started++
 			startedMutex.Unlock()
+			// Just so we don't overburden
+			time.Sleep(100 * time.Millisecond)
 		}
 	}
 
 	stopChannel := make(chan interface{})
 
-	producers := 20
+	producers := 10
 
 	for idx := 0; idx < producers; idx++ {
 		wg.Add(1)
