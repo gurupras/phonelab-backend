@@ -20,11 +20,17 @@ var (
 func InitLogger(loggers ...*logrus.Logger) {
 	if loggers != nil && len(loggers) != 0 {
 		logger = loggers[0]
-	} else {
+	}
+	if logger == nil {
 		// By default, we're at panic level
 		logger = logrus.New()
 		logger.Level = logrus.PanicLevel
 	}
+}
+
+// Helper function mostly used for testing
+func GetLogger() *logrus.Logger {
+	return logger
 }
 
 type Server struct {
