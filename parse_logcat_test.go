@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -284,18 +286,18 @@ func TestSortLogs(t *testing.T) {
 	}
 
 	// Now mess this up and write it into the file
-	mod5Lines := make([]string, 0)
-	nonMod5Lines := make([]string, 0)
+	modLines := make([]string, 0)
+	nonModLines := make([]string, 0)
 	for i := 0; i < 1000; i++ {
 		if i%5 == 0 {
-			mod5Lines = append(mod5Lines, lines[i])
+			modLines = append(modLines, lines[i])
 		} else {
-			nonMod5Lines = append(nonMod5Lines, lines[i])
+			nonModLines = append(nonModLines, lines[i])
 		}
 	}
 
-	gzipWriter.Write([]byte(strings.Join(mod5Lines, "\n") + "\n"))
-	gzipWriter.Write([]byte(strings.Join(nonMod5Lines, "\n")))
+	gzipWriter.Write([]byte(strings.Join(modLines, "\n") + "\n"))
+	gzipWriter.Write([]byte(strings.Join(nonModLines, "\n")))
 
 	gzipWriter.Flush()
 	gzipWriter.Close()
@@ -335,4 +337,140 @@ func TestSortLogs(t *testing.T) {
 
 	equal := strings.Compare(expected.String(), obtained.String())
 	assert.Equal(0, equal, "Strings don't match")
+}
+
+type DummySortInterface int
+
+func (dsi DummySortInterface) Less(s gocommons.SortInterface) (ret bool, err error) {
+	odsi := s.(DummySortInterface)
+	ret = int(dsi) < int(odsi)
+	return
+}
+
+func (dsi DummySortInterface) String() string {
+	return fmt.Sprintf("%v", dsi)
+}
+
+func ParseDummySortInterface(line string) gocommons.SortInterface {
+	if val, err := strconv.Atoi(line); err != nil {
+		return nil
+	} else {
+		return DummySortInterface(val)
+	}
+}
+func TestLoglineSortNegative_1(t *testing.T) {
+	//t.Parallel()
+
+	assert := assert.New(t)
+
+	var lsp *gocommons.SortParams
+
+	lsp = phonelab_backend.NewLoglineSortParams()
+	lsp.LineConvert = ParseDummySortInterface
+
+	line := GenerateLoglineForPayload("dummy")
+	loglineSI := phonelab_backend.ParseLoglineToSortInterface(line)
+	lsp.Lines = append(lsp.Lines, loglineSI)
+	lsp.Lines = append(lsp.Lines, ParseDummySortInterface("4"))
+
+	defer func() {
+		if r := recover(); r == nil {
+			assert.Fail("Expected test to panic from bad interface conversion")
+		}
+	}()
+	sort.Sort(lsp.Lines)
+}
+
+func TestLoglineSortByBootId(t *testing.T) {
+	//t.Parallel()
+
+	assert := assert.New(t)
+
+	for i := 0; i < 10000; i++ {
+		lsp := phonelab_backend.NewLoglineSortParams()
+
+		rlg1 := new(RandomLoglineGenerator)
+		rlg1.BootId = GenerateRandomBootId()
+		rlg1.StartTimestamp = time.Now()
+		rlg1.LastLogcatTimestamp = time.Now()
+		rlg1.MaxDelayBetweenLoglines = 4 * time.Second
+
+		line1 := GenerateRandomLogline(rlg1)
+
+		rlg2 := new(RandomLoglineGenerator)
+		rlg2.BootId = GenerateRandomBootId()
+		rlg2.StartTimestamp = time.Now()
+		rlg2.LastLogcatTimestamp = time.Now()
+		rlg2.MaxDelayBetweenLoglines = 4 * time.Second
+
+		line2 := GenerateRandomLogline(rlg2)
+
+		lsp.Lines = append(lsp.Lines, phonelab_backend.ParseLoglineToSortInterface(line1))
+		lsp.Lines = append(lsp.Lines, phonelab_backend.ParseLoglineToSortInterface(line2))
+
+		// Now first confirm which bootID is supposed to appear before which
+		var expected string
+
+		switch strings.Compare(rlg1.BootId, rlg2.BootId) {
+		case -1:
+			expected = strings.TrimSpace(line1)
+		case 0:
+			assert.Fail("Same boot IDs across multiple RandomLoglineGenerators")
+		case 1:
+			expected = strings.TrimSpace(line2)
+		}
+
+		sort.Sort(lsp.Lines)
+
+		got := strings.TrimSpace(lsp.Lines[0].String())
+
+		assert.Equal(expected, got, "Sort by bootID failed")
+	}
+}
+
+func TestLoglineSortWithNil(t *testing.T) {
+	//t.Parallel()
+
+	assert := assert.New(t)
+
+	defer func() {
+		// Fail on panic
+		if r := recover(); r != nil {
+			assert.Fail(fmt.Sprintf("Should not panic but received: %v", r))
+		}
+	}()
+
+	rlg1 := new(RandomLoglineGenerator)
+	rlg1.BootId = GenerateRandomBootId()
+	rlg1.StartTimestamp = time.Now()
+	rlg1.LastLogcatTimestamp = time.Now()
+	rlg1.MaxDelayBetweenLoglines = 4 * time.Second
+
+	line1 := GenerateRandomLogline(rlg1)
+
+	lsp := phonelab_backend.NewLoglineSortParams()
+
+	lsp.Lines = append(lsp.Lines, phonelab_backend.ParseLoglineToSortInterface(line1))
+	lsp.Lines = append(lsp.Lines, phonelab_backend.ParseLoglineToSortInterface(""))
+
+	sort.Sort(lsp.Lines)
+
+	expected := strings.TrimSpace(line1)
+	got := lsp.Lines[0].String()
+
+	assert.Equal(expected, got, "Did not get expected line when nil was second")
+
+	// Now, try with nil first
+	lsp = phonelab_backend.NewLoglineSortParams()
+
+	lsp.Lines = append(lsp.Lines, phonelab_backend.ParseLoglineToSortInterface(""))
+	lsp.Lines = append(lsp.Lines, phonelab_backend.ParseLoglineToSortInterface(line1))
+
+	sort.Sort(lsp.Lines)
+
+	expected = strings.TrimSpace(line1)
+	got = lsp.Lines[0].String()
+
+	assert.Equal(expected, got, "Did not get expected line when nil was first")
+
 }
