@@ -215,7 +215,7 @@ func SortLogs(inputPath string, outputPath string) (err error) {
 	defer writer.Close()
 	defer writer.Flush()
 
-	if reader, err = ifile.Reader(1024); err != nil {
+	if reader, err = ifile.Reader(1048576); err != nil {
 		err = errors.New(fmt.Sprintf("Failed to get reader to input file (SortLogs()): %v", err))
 		return
 	}
