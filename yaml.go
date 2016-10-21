@@ -52,7 +52,7 @@ func WriteWorkAsYamlMetadataBytes(writer io.Writer, work *Work) (err error) {
 	return
 }
 
-func parseStagingMetadataFromFile(filePath string) (stagingMetadata *StagingMetadata, err error) {
+func ParseStagingMetadataFromFile(filePath string) (stagingMetadata *StagingMetadata, err error) {
 	var file *os.File
 
 	file, err = os.OpenFile(filePath, os.O_RDONLY, 0)
