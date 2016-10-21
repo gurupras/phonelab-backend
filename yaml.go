@@ -52,7 +52,7 @@ func WriteWorkAsYamlMetadataBytes(writer io.Writer, work *Work) (err error) {
 	return
 }
 
-func ParseStagingMetadataFromFile(filePath string) (stagingMetadata *StagingMetadata, err error) {
+func ParseYamlBytesFromFile(filePath string, maxHeaderSize int) (yamlBytes []byte, err error) {
 	var file *os.File
 
 	file, err = os.OpenFile(filePath, os.O_RDONLY, 0)
@@ -77,8 +77,29 @@ func ParseStagingMetadataFromFile(filePath string) (stagingMetadata *StagingMeta
 	uncompressedBuf := new(bytes.Buffer)
 	io.Copy(uncompressedBuf, gzipReader)
 
+	yamlBytes = uncompressedBuf.Bytes()
+	return
+}
+
+func ParseStagingMetadataFromFile(filePath string, nBytes ...int) (stagingMetadata *StagingMetadata, err error) {
+	var maxHeaderSize int
+	var metadataBytes []byte
+
+	if len(nBytes) == 0 {
+		maxHeaderSize = 1024
+	} else {
+		maxHeaderSize = nBytes[0]
+		if maxHeaderSize <= 0 {
+			maxHeaderSize = 1024
+		}
+	}
+
+	if metadataBytes, err = ParseYamlBytesFromFile(filePath, maxHeaderSize); err != nil {
+		return
+	}
+
 	stagingMetadata = new(StagingMetadata)
-	err = yaml.Unmarshal(uncompressedBuf.Bytes(), stagingMetadata)
+	err = yaml.Unmarshal(metadataBytes, stagingMetadata)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to unmarshall staging metadata\n", err)
 		return

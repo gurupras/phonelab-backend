@@ -62,7 +62,7 @@ func MakeStagedFilesPending(config *Config) error {
 	stagedFileToPendingWork := func(filePath string) {
 		defer wg.Done()
 		var stagingMetadata *StagingMetadata
-		if stagingMetadata, err = parseStagingMetadataFromFile(filePath); err != nil {
+		if stagingMetadata, err = ParseStagingMetadataFromFile(filePath); err != nil {
 			fmt.Fprintln(os.Stderr, fmt.Sprintf("Failed to parse staging metadata from file '%v': %v", filePath, err))
 			return
 		}
