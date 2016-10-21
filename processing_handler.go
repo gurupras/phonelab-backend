@@ -1,12 +1,14 @@
 package phonelab_backend
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/fatih/set"
 	"github.com/gurupras/gocommons"
 )
 
@@ -45,6 +47,16 @@ func InitializeProcessingConfig() *ProcessingConfig {
 	pc.Core = ProcessStagedWork
 
 	return pc
+}
+
+func NewOutMetadata() *OutMetadata {
+	ret := new(OutMetadata)
+	ret.Versions = make([]string, 0)
+	ret.PackageNames = make([]string, 0)
+	ret.UploadTimestamps = make([]int64, 0)
+	ret.BootIds = make([]string, 0)
+	ret.Tags = make([]string, 0)
+	return ret
 }
 
 func ProcessStage(functions []ProcessingFunction, work *ProcessingWork) (errs []error, fail bool) {
@@ -125,10 +137,19 @@ func ProcessStagedWork(processingWork *ProcessingWork, processingConfig *Process
 		return err
 	}
 
+	outMetadata := NewOutMetadata()
+
+	outMetadata.DeviceId = processingWork.DeviceId
+
 	sortedFiles := make([]string, 0)
 	for _, chunkWork := range processingWork.WorkList {
 		fileName := filepath.Base(chunkWork.StagingFileName)
 		sortedFile := filepath.Join(sortedDirBase, fileName)
+
+		// Update outMetadata
+		outMetadata.Versions = append(outMetadata.Versions, chunkWork.Version)
+		outMetadata.UploadTimestamps = append(outMetadata.UploadTimestamps, chunkWork.UploadTimestamp)
+		outMetadata.PackageNames = append(outMetadata.PackageNames, chunkWork.PackageName)
 
 		if err = SortLogs(chunkWork.StagingFileName, sortedFile); err != nil {
 			err = errors.New(fmt.Sprintf("Failed sortLogs(%v, %v): %v", chunkWork.StagingFileName, sortedFile, err))
@@ -175,7 +196,30 @@ func ProcessStagedWork(processingWork *ProcessingWork, processingConfig *Process
 	defer writer.Close()
 	defer writer.Flush()
 
-	// TODO: Write metadata first.
+	/**
+	 * The metadata needs to come first in the output file
+	 * However, If we were to write the metadata first, we would need to do
+	 * 2 passes over the input files. This is what we do for now..
+	 *
+	 * TODO:
+	 * The better approach would be to do the n-way merge, write the output
+	 * to a file (merged.log), parse all the necessary metadata while doing
+	 * so, write this metadata to another file (metadata.log) and then do
+	 * the equivalent of:
+	 * zcat metadata.log merged.log | gzip >out.log
+	 */
+	for _, f := range sortedFiles {
+		if err = ParseOutMetadata(f, outMetadata); err != nil {
+			err = errors.New(fmt.Sprintf("Failed to parse outmetadata from file '%v': %v", f, err))
+			return
+		}
+	}
+
+	// Write the metadata
+	if err = WriteMetadata(writer, outMetadata); err != nil {
+		err = errors.New(fmt.Sprintf("Failed to write outmetadata to file '%v': %v", outPath, err))
+		return
+	}
 
 	// Now we have a bunch of chunks..we should be able to call n-way merge on this
 	sortedChannel := make(chan gocommons.SortInterface, 1000)
@@ -203,6 +247,50 @@ func ProcessStagedWork(processingWork *ProcessingWork, processingConfig *Process
 	}
 	if err = gocommons.NWayMergeGenerator(sortedFiles, sortParams, sortedChannel, nWayMergeCallback); err != nil {
 		err = errors.New(fmt.Sprintf("Failed NWayMergeGenerator(): %v", err))
+	}
+	return
+}
+
+func ParseOutMetadata(filePath string, outMetadata *OutMetadata) (err error) {
+	var (
+		ifile   *gocommons.File
+		reader  *bufio.Scanner
+		line    string
+		logline *Logline
+	)
+
+	if ifile, err = gocommons.Open(filePath, os.O_RDONLY, gocommons.GZ_TRUE); err != nil {
+		err = errors.New(fmt.Sprintf("Failed to open input file for ParseOutMetadata(): %v", err))
+		return
+	}
+	defer ifile.Close()
+
+	if reader, err = ifile.Reader(1048576); err != nil {
+		err = errors.New(fmt.Sprintf("Failed to get reader to input file in ParseOutMetadata(): %v", err))
+		return
+	}
+
+	reader.Split(bufio.ScanLines)
+
+	bootIds := set.NewNonTS()
+	tags := set.NewNonTS()
+
+	for reader.Scan() {
+		line = reader.Text()
+		if logline, err = ParseLogline(line); err != nil {
+			return
+		}
+		bootIds.Add(logline.BootId)
+		tags.Add(logline.Tag)
+	}
+
+	for _, i := range bootIds.List() {
+		b := i.(string)
+		outMetadata.BootIds = append(outMetadata.BootIds, b)
+	}
+	for _, i := range tags.List() {
+		t := i.(string)
+		outMetadata.BootIds = append(outMetadata.BootIds, t)
 	}
 	return
 }
