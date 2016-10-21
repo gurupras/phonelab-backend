@@ -1,17 +1,12 @@
 package phonelab_backend
 
 import (
-	"bytes"
-	"compress/gzip"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"gopkg.in/yaml.v2"
 
 	"github.com/fatih/set"
 	"github.com/gurupras/gocommons"
@@ -66,38 +61,13 @@ func MakeStagedFilesPending(config *Config) error {
 
 	stagedFileToPendingWork := func(filePath string) {
 		defer wg.Done()
-		var file *os.File
-
-		file, err = os.OpenFile(filePath, os.O_RDONLY, 0)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to open staged file to move to pending work\n", err)
-			return
-		}
-		// XXX: Hard-coded to 1K
-		buf := new(bytes.Buffer)
-
-		_, err = io.CopyN(buf, file, 1024)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to read data from staged file\n", err)
-			return
-		}
-
-		var gzipReader *gzip.Reader
-		if gzipReader, err = gzip.NewReader(buf); err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to obtain reader to compressed stream", err)
-			return
-		}
-		uncompressedBuf := new(bytes.Buffer)
-		io.Copy(uncompressedBuf, gzipReader)
-
-		stagingMetadata := StagingMetadata{}
-		err = yaml.Unmarshal(uncompressedBuf.Bytes(), &stagingMetadata)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to unmarshall staging metadata\n", err)
+		var stagingMetadata *StagingMetadata
+		if stagingMetadata, err = parseStagingMetadataFromFile(filePath); err != nil {
+			fmt.Fprintln(os.Stderr, fmt.Sprintf("Failed to parse staging metadata from file '%v': %v", filePath, err))
 			return
 		}
 		work := &Work{
-			StagingMetadata: stagingMetadata,
+			StagingMetadata: *stagingMetadata,
 			StagingFileName: filePath,
 			OutDir:          config.OutDir,
 		}
