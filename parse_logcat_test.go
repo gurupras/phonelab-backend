@@ -370,8 +370,33 @@ func TestLoglineSortNegative_1(t *testing.T) {
 
 	line := GenerateLoglineForPayload("dummy")
 	loglineSI := phonelab_backend.ParseLoglineToSortInterface(line)
+
 	lsp.Lines = append(lsp.Lines, loglineSI)
 	lsp.Lines = append(lsp.Lines, ParseDummySortInterface("4"))
+
+	defer func() {
+		if r := recover(); r == nil {
+			assert.Fail("Expected test to panic from bad interface conversion")
+		}
+	}()
+	sort.Sort(lsp.Lines)
+}
+
+func TestLoglineSortNegative_2(t *testing.T) {
+	//t.Parallel()
+
+	assert := assert.New(t)
+
+	var lsp *gocommons.SortParams
+
+	lsp = phonelab_backend.NewLoglineSortParams()
+	lsp.LineConvert = ParseDummySortInterface
+
+	line := GenerateLoglineForPayload("dummy")
+	loglineSI := phonelab_backend.ParseLoglineToSortInterface(line)
+
+	lsp.Lines = append(lsp.Lines, ParseDummySortInterface("4"))
+	lsp.Lines = append(lsp.Lines, loglineSI)
 
 	defer func() {
 		if r := recover(); r == nil {
@@ -473,4 +498,21 @@ func TestLoglineSortWithNil(t *testing.T) {
 
 	assert.Equal(expected, got, "Did not get expected line when nil was first")
 
+	// Now try with a bunch of nils on either side
+	lsp = phonelab_backend.NewLoglineSortParams()
+
+	for i := 0; i < 5; i++ {
+		lsp.Lines = append(lsp.Lines, phonelab_backend.ParseLoglineToSortInterface(""))
+	}
+	lsp.Lines = append(lsp.Lines, phonelab_backend.ParseLoglineToSortInterface(line1))
+	for i := 0; i < 5; i++ {
+		lsp.Lines = append(lsp.Lines, phonelab_backend.ParseLoglineToSortInterface(""))
+	}
+
+	sort.Sort(lsp.Lines)
+
+	expected = strings.TrimSpace(line1)
+	got = lsp.Lines[0].String()
+
+	assert.Equal(expected, got, "Did not get expected line when nil was first")
 }

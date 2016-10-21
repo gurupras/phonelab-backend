@@ -139,7 +139,6 @@ func ParseLogline(line string) (logline *Logline, err error) {
 	}
 	// Convert values
 	// Some datetimes are 9 digits instead of 6
-	// TODO: Get rid of the last 3
 	var datetime time.Time
 
 	if len(kv_map["datetime"]) > 26 {

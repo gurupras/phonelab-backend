@@ -317,13 +317,11 @@ func RunTestServerAsync(port int, config *phonelab_backend.Config, serverPtr **p
 	stagingDirGlobal = config.StagingDir
 	outDirGlobal = config.OutDir
 
-	// FIXME: Port should probably be part of command line arguments
-	// or a config file. Currently, this is hard-coded.
 	logger.Debug("Starting server ...")
 
 	// XXX: Should pending work handler be included here?
 	// If not, we would have to include it in every place that
-	// is looking to test an upload (currently, all tests in this file)
+	// is looking to test an upload
 	pendingWorkHandlerWg := sync.WaitGroup{}
 	pendingWorkHandlerWg.Add(1)
 	go func() {

@@ -209,7 +209,7 @@ func DeviceWorkHandler(deviceId string, workChannel chan *Work, processingConfig
 
 	logger.Debugln(fmt.Sprintf("%s -> workChannel closed..waiting for all pending work to complete", deviceId))
 
-	//XXX: Wait for all work to complete
+	// Wait for all work to complete
 	for {
 		size := workSet.Size()
 		if size > 0 {

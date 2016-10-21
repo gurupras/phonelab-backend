@@ -255,6 +255,7 @@ func TestHandleUpload(t *testing.T) {
 	// Core processing will still fail.
 	assert.NotNil(err, "Should have errored")
 	stagingConfig.PreProcessing = stagingConfig.PreProcessing[:0]
+
 	// TODO: Now, fail core
 
 	stagingConfig = new(phonelab_backend.StagingConfig)
@@ -486,7 +487,6 @@ func TestLoadCapability(t *testing.T) {
 	logger.Debug("Terminating ...")
 
 	logger.Debug("Stopping server ...")
-	//TODO: Server stop logic
 	server.Stop()
 	//cleanup()
 }
