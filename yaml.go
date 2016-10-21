@@ -2,9 +2,11 @@ package phonelab_backend
 
 import (
 	"bytes"
+	"compress/gzip"
 	"errors"
 	"fmt"
 	"io"
+	"os"
 
 	"gopkg.in/yaml.v2"
 )
@@ -25,7 +27,7 @@ func GenerateStagingMetadata(work *Work) []byte {
 	return metadata
 }
 
-func WriteStagingMetadata(writer io.Writer, metadata *StagingMetadata) (err error) {
+func WriteMetadata(writer io.Writer, metadata interface{}) (err error) {
 	buf := new(bytes.Buffer)
 	metadataBytes, err := yaml.Marshal(metadata)
 	if err != nil {
@@ -43,7 +45,7 @@ func WriteStagingMetadata(writer io.Writer, metadata *StagingMetadata) (err erro
 }
 
 func WriteWorkAsYamlMetadataBytes(writer io.Writer, work *Work) (err error) {
-	if err = WriteStagingMetadata(writer, WorkToStagingMetadata(work)); err != nil {
+	if err = WriteMetadata(writer, WorkToStagingMetadata(work)); err != nil {
 		err = errors.New(fmt.Sprintf("Failed WriteWorkAsYamlMetadataBytes(): %v", err))
 		return
 	}

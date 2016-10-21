@@ -71,7 +71,7 @@ func UpdateStagingMetadata(work *Work) (err error, fail bool) {
 		return
 	}
 
-	WriteStagingMetadata(compressedWriter, metadata)
+	WriteMetadata(compressedWriter, metadata)
 	compressedWriter.Flush()
 	compressedWriter.Close()
 
