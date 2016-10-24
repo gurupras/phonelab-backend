@@ -26,11 +26,7 @@ func WorkToStagingMetadata(work *Work) *StagingMetadata {
 
 func WriteMetadata(writer io.Writer, metadata interface{}) (err error) {
 	buf := new(bytes.Buffer)
-	metadataBytes, err := yaml.Marshal(metadata)
-	if err != nil {
-		err = errors.New(fmt.Sprintf("Failed to marshal metadata into YAML: %v", err))
-		return
-	}
+	metadataBytes, _ := yaml.Marshal(metadata)
 	totalLen := len(metadataBytes) + 8
 	buf.WriteString(fmt.Sprintf("%08d\n", totalLen))
 	buf.WriteString("---\n")
