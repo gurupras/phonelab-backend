@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"gopkg.in/yaml.v2"
@@ -41,6 +44,18 @@ func TestWorkToStagingMetadata(t *testing.T) {
 	assert.Equal(work.UploadTimestamp, metadata.UploadTimestamp, "UploadTimestamp did not match")
 }
 
+func testEquality(work *phonelab_backend.Work, reader io.Reader, assert *assert.Assertions) {
+	yamlStruct := phonelab_backend.StagingMetadata{}
+	yamlBytes, err := phonelab_backend.ParseYamlBytesFromReader(reader)
+	assert.Nil(err, "Failed to parse yaml bytes from buffer")
+	err = yaml.Unmarshal(yamlBytes, &yamlStruct)
+	assert.Nil(err, "Failed to unmarshal marshalled metadata")
+	assert.Equal(work.Version, yamlStruct.Version, "Version did not match")
+	assert.Equal(work.DeviceId, yamlStruct.DeviceId, "DeviceId did not match")
+	assert.Equal(work.PackageName, yamlStruct.PackageName, "PackageName did not match")
+	assert.Equal(work.UploadTimestamp, yamlStruct.UploadTimestamp, "UploadTimestamp did not match")
+}
+
 type DummyWriter string
 
 func (dw *DummyWriter) Write([]byte) (n int, err error) {
@@ -54,7 +69,6 @@ func TestWriteMetadata(t *testing.T) {
 	var err error
 	var work *phonelab_backend.Work
 	var buf bytes.Buffer
-	var yamlStruct phonelab_backend.StagingMetadata
 
 	assert := assert.New(t)
 
@@ -70,18 +84,7 @@ func TestWriteMetadata(t *testing.T) {
 	// Now test valid yaml
 	err = phonelab_backend.WriteMetadata(&buf, work.StagingMetadata)
 	assert.Nil(err, "Error in writing YAML metadata")
-
-	yamlStruct = phonelab_backend.StagingMetadata{}
-	yamlBytes, err := phonelab_backend.ParseYamlBytesFromReader(bytes.NewReader(buf.Bytes()))
-	assert.Nil(err, "Failed to parse yaml bytes from buffer")
-
-	err = yaml.Unmarshal(yamlBytes, &yamlStruct)
-	assert.Nil(err, "Failed to unmarshal marshalled metadata")
-
-	assert.Equal(work.Version, yamlStruct.Version, "Version did not match")
-	assert.Equal(work.DeviceId, yamlStruct.DeviceId, "DeviceId did not match")
-	assert.Equal(work.PackageName, yamlStruct.PackageName, "PackageName did not match")
-	assert.Equal(work.UploadTimestamp, yamlStruct.UploadTimestamp, "UploadTimestamp did not match")
+	testEquality(work, bytes.NewReader(buf.Bytes()), assert)
 
 	// Now try to add data after YAML and see what happens
 	payload := "Just some stuff you know"
@@ -89,18 +92,7 @@ func TestWriteMetadata(t *testing.T) {
 	n, err = buf.WriteString(payload)
 	assert.Equal(len(payload), n, "Failed to write all the bytes")
 	assert.Nil(err, "Error while adding payload")
-
-	yamlStruct = phonelab_backend.StagingMetadata{}
-	yamlBytes, err = phonelab_backend.ParseYamlBytesFromReader(bytes.NewReader(buf.Bytes()))
-	assert.Nil(err, "Failed to parse yaml bytes from buffer")
-
-	err = yaml.Unmarshal(yamlBytes, &yamlStruct)
-	assert.Nil(err, "Failed to unmarshal marshalled metadata")
-
-	assert.Equal(work.Version, yamlStruct.Version, "Version did not match")
-	assert.Equal(work.DeviceId, yamlStruct.DeviceId, "DeviceId did not match")
-	assert.Equal(work.PackageName, yamlStruct.PackageName, "PackageName did not match")
-	assert.Equal(work.UploadTimestamp, yamlStruct.UploadTimestamp, "UploadTimestamp did not match")
+	testEquality(work, bytes.NewReader(buf.Bytes()), assert)
 }
 
 func TestParseYamlBytesFromReader(t *testing.T) {
@@ -135,16 +127,7 @@ func TestParseYamlBytesFromReader(t *testing.T) {
 	err = phonelab_backend.WriteMetadata(ibuf, work.StagingMetadata)
 	assert.Nil(err, "Failed to write metadata to buffer")
 	// Parse it back out and check for success
-	yamlStruct := phonelab_backend.StagingMetadata{}
-	yamlBytes, err := phonelab_backend.ParseYamlBytesFromReader(bytes.NewReader(ibuf.Bytes()))
-	assert.Nil(err, "Failed to parse yaml bytes from buffer")
-	err = yaml.Unmarshal(yamlBytes, &yamlStruct)
-	assert.Nil(err, "Failed to unmarshal marshalled metadata")
-	assert.Equal(work.Version, yamlStruct.Version, "Version did not match")
-	assert.Equal(work.DeviceId, yamlStruct.DeviceId, "DeviceId did not match")
-	assert.Equal(work.PackageName, yamlStruct.PackageName, "PackageName did not match")
-	assert.Equal(work.UploadTimestamp, yamlStruct.UploadTimestamp, "UploadTimestamp did not match")
-
+	testEquality(work, bytes.NewReader(ibuf.Bytes()), assert)
 }
 
 func TestParseYamlBytesFromFile(t *testing.T) {
@@ -154,18 +137,70 @@ func TestParseYamlBytesFromFile(t *testing.T) {
 	assert := assert.New(t)
 
 	// First, fail on a file that doesn't exist
-	filePath := "/tmp/filepaththatdoesnotexist"
+	filePath := filepath.Join(testDirBase, "filepaththatdoesnotexist")
 	_, err = phonelab_backend.ParseYamlBytesFromFile(filePath)
 	assert.NotNil(err, "Expected error on file that does not exist")
 
 	// Now, fail on a file that exists but doesn't contain valid metadata
 	// In this case, we just use an empty file
-	f, err := gocommons.TempFile("/tmp", "testparseyamlbytesfromfile-")
+	f, err := gocommons.TempFile(testDirBase, "staging-testparseyamlbytesfromfile-")
 	assert.Nil(err, "Failed to create a temporary file")
 	f.Close()
+	filePath = f.Name()
 
 	_, err = phonelab_backend.ParseYamlBytesFromFile(filePath)
 	assert.NotNil(err, "Expected error on empty file that does not contain metadata")
 
 	// TODO: Now for validity
+	work := generateFakeWork()
+	f, err = os.OpenFile(filePath, os.O_WRONLY, 0664)
+	assert.Nil(err, "Failed to open file")
+	err = phonelab_backend.WriteMetadata(f, work.StagingMetadata)
+	assert.Nil(err, "Failed to write metadata to file")
+	f.Close()
+	// Now read it back and verify that they match
+	f, err = os.OpenFile(filePath, os.O_RDONLY, 0664)
+	assert.Nil(err, "Failed to open file")
+	testEquality(work, f, assert)
+
+	os.Remove(f.Name())
+}
+
+func TestParseStagingMetadataFromFile(t *testing.T) {
+	//t.Parallel()
+
+	var err error
+	assert := assert.New(t)
+
+	// First, fail on a file that doesn't exist
+	filePath := filepath.Join(testDirBase, "filepaththatdoesnotexist")
+	_, err = phonelab_backend.ParseStagingMetadataFromFile(filePath)
+	assert.NotNil(err, "Expected error on file that does not exist")
+
+	// Now, fail yaml.Unmarshal
+	// We do this by writing valid yaml data into the file, but
+	// yaml data that will not unmarshal into StagingMetadata.
+	// First, open file
+	f, err := gocommons.TempFile(testDirBase, "staging-testparsestagingmetadatafromfile-")
+	dummyString := "dummy string that should fail unmarshal"
+	f.WriteString(fmt.Sprintf("%08d\n%s", len(dummyString), dummyString))
+	// Now, fail yaml.Unmarshal
+	_, err = phonelab_backend.ParseStagingMetadataFromFile(f.Name())
+	assert.NotNil(err, "Expected failure while unmarshalling map into StagingMetadata")
+	f.Close()
+
+	// Now, success
+	work := generateFakeWork()
+	filePath = f.Name()
+	f, err = os.OpenFile(filePath, os.O_WRONLY, 0664)
+	assert.Nil(err, "Failed to open file")
+	err = phonelab_backend.WriteMetadata(f, work.StagingMetadata)
+	assert.Nil(err, "Failed to write metadata to file")
+	f.Close()
+	// Now read it back and verify that they match
+	f, err = os.OpenFile(filePath, os.O_RDONLY, 0664)
+	assert.Nil(err, "Failed to open file")
+	testEquality(work, f, assert)
+
+	os.Remove(f.Name())
 }
