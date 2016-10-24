@@ -25,12 +25,6 @@ func WorkToStagingMetadata(work *Work) *StagingMetadata {
 	return metadata
 }
 
-func GenerateStagingMetadata(work *Work) []byte {
-	// The following statement __cannot__ fail
-	metadata, _ := yaml.Marshal(WorkToStagingMetadata(work))
-	return metadata
-}
-
 func WriteMetadata(writer io.Writer, metadata interface{}) (err error) {
 	buf := new(bytes.Buffer)
 	metadataBytes, err := yaml.Marshal(metadata)
@@ -50,32 +44,24 @@ func WriteMetadata(writer io.Writer, metadata interface{}) (err error) {
 	return
 }
 
-func WriteWorkAsYamlMetadataBytes(writer io.Writer, work *Work) (err error) {
-	if err = WriteMetadata(writer, WorkToStagingMetadata(work)); err != nil {
-		err = errors.New(fmt.Sprintf("Failed WriteWorkAsYamlMetadataBytes(): %v", err))
-		return
-	}
-	return
-}
-
 func ParseYamlBytesFromReader(reader io.Reader) (yamlBytes []byte, err error) {
 	buf := new(bytes.Buffer)
 
 	if _, err = io.CopyN(buf, reader, 9); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to read length of metadata bytes:", err)
+		err = errors.New(fmt.Sprintf("Failed to read length of metadata bytes: %v", err))
 		return
 	}
 
 	var metadataBytesLen int
 	if metadataBytesLen, err = strconv.Atoi(strings.TrimSpace(buf.String())); err != nil {
-		fmt.Fprintln(os.Stderr, fmt.Sprintf("Failed to convert length of metadata bytes (%v) to int:", buf.String(), err))
+		err = errors.New(fmt.Sprintf("Failed to convert length of metadata bytes (%v) to int: %v", buf.String(), err))
 		return
 	}
 
 	buf = new(bytes.Buffer)
 	_, err = io.CopyN(buf, reader, int64(metadataBytesLen))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to read data from staged file\n", err)
+		err = errors.New(fmt.Sprintf("Failed to read data from reader: %v", err))
 		return
 	}
 
@@ -83,7 +69,7 @@ func ParseYamlBytesFromReader(reader io.Reader) (yamlBytes []byte, err error) {
 	return
 }
 
-func ParseYamlBytesFromFile(filePath string, maxHeaderSize int) (yamlBytes []byte, err error) {
+func ParseYamlBytesFromFile(filePath string) (yamlBytes []byte, err error) {
 	var (
 		file       *gocommons.File
 		gzipReader *gzip.Reader
@@ -91,14 +77,14 @@ func ParseYamlBytesFromFile(filePath string, maxHeaderSize int) (yamlBytes []byt
 
 	file, err = gocommons.Open(filePath, os.O_RDONLY, gocommons.GZ_UNKNOWN)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to open staged file to move to pending work\n", err)
+		err = errors.New(fmt.Sprintf("Failed to open staged file to move to pending work: %v", err))
 		return
 	}
 	defer file.Close()
 
 	// First read the first 8 bytes. These contain the size of the metadata bytes
 	if gzipReader, err = gzip.NewReader(file.File); err != nil {
-		fmt.Fprintln(os.Stderr, fmt.Sprintf("Failed to get gzip reader to file '%v': %v", file.Path, err))
+		err = errors.New(fmt.Sprintf("Failed to get gzip reader to file '%v': %v", file.Path, err))
 		return
 	}
 
@@ -106,20 +92,10 @@ func ParseYamlBytesFromFile(filePath string, maxHeaderSize int) (yamlBytes []byt
 	return
 }
 
-func ParseStagingMetadataFromFile(filePath string, nBytes ...int) (stagingMetadata *StagingMetadata, err error) {
-	var maxHeaderSize int
+func ParseStagingMetadataFromFile(filePath string) (stagingMetadata *StagingMetadata, err error) {
 	var metadataBytes []byte
 
-	if len(nBytes) == 0 {
-		maxHeaderSize = 1024
-	} else {
-		maxHeaderSize = nBytes[0]
-		if maxHeaderSize <= 0 {
-			maxHeaderSize = 1024
-		}
-	}
-
-	if metadataBytes, err = ParseYamlBytesFromFile(filePath, maxHeaderSize); err != nil {
+	if metadataBytes, err = ParseYamlBytesFromFile(filePath); err != nil {
 		return
 	}
 
