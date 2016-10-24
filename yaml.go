@@ -2,7 +2,6 @@ package phonelab_backend
 
 import (
 	"bytes"
-	"compress/gzip"
 	"errors"
 	"fmt"
 	"io"
@@ -71,8 +70,8 @@ func ParseYamlBytesFromReader(reader io.Reader) (yamlBytes []byte, err error) {
 
 func ParseYamlBytesFromFile(filePath string) (yamlBytes []byte, err error) {
 	var (
-		file       *gocommons.File
-		gzipReader *gzip.Reader
+		file   *gocommons.File
+		reader io.Reader
 	)
 
 	file, err = gocommons.Open(filePath, os.O_RDONLY, gocommons.GZ_UNKNOWN)
@@ -82,13 +81,10 @@ func ParseYamlBytesFromFile(filePath string) (yamlBytes []byte, err error) {
 	}
 	defer file.Close()
 
-	// First read the first 8 bytes. These contain the size of the metadata bytes
-	if gzipReader, err = gzip.NewReader(file.File); err != nil {
-		err = errors.New(fmt.Sprintf("Failed to get gzip reader to file '%v': %v", file.Path, err))
-		return
-	}
-
-	yamlBytes, err = ParseYamlBytesFromReader(gzipReader)
+	// The only case in which this can fail is if the file somehow
+	// changed permissions between opening and obtaining reader
+	reader, _ = file.RawReader()
+	yamlBytes, err = ParseYamlBytesFromReader(reader)
 	return
 }
 
@@ -102,7 +98,7 @@ func ParseStagingMetadataFromFile(filePath string) (stagingMetadata *StagingMeta
 	stagingMetadata = new(StagingMetadata)
 	err = yaml.Unmarshal(metadataBytes, stagingMetadata)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to unmarshall staging metadata\n", err)
+		err = errors.New(fmt.Sprintf("Failed to unmarshall staging metadata from file '%v': %v", filePath, err))
 		return
 	}
 	return
