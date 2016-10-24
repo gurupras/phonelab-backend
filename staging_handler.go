@@ -21,7 +21,9 @@ type StagingConfig struct {
 
 type StagingMetadata struct {
 	UploadMetadata
-	Dates []time.Time `yaml:dates`
+	Dates   []time.Time `yaml:dates`
+	Tags    []string    `yaml:tags`
+	BootIds []string    `yaml:boot_ids`
 }
 
 type Config struct {

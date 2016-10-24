@@ -65,7 +65,7 @@ func UpdateStagingMetadata(work *Work) (err error, fail bool) {
 	metadataBuf := new(bytes.Buffer)
 	compressedWriter := gzip.NewWriter(metadataBuf)
 	metadata := WorkToStagingMetadata(work)
-	if err = UpdateStagingMetadataDates(metadata, work); err != nil {
+	if err = UpdateStagingMetadataFields(metadata, work); err != nil {
 		err = errors.New(fmt.Sprintf("Failed to obtain dates for metadata: %v: %v", work.StagingFileName, err))
 		return
 	}
@@ -84,7 +84,7 @@ func UpdateStagingMetadata(work *Work) (err error, fail bool) {
 	return
 }
 
-func UpdateStagingMetadataDates(metadata *StagingMetadata, work *Work) (err error) {
+func UpdateStagingMetadataFields(metadata *StagingMetadata, work *Work) (err error) {
 	// We need to:
 	//   1) Copy entire DataStream into another stream and update work.DataStream
 	//   2) Read stream and find set of all dates in use
@@ -101,8 +101,12 @@ func UpdateStagingMetadataDates(metadata *StagingMetadata, work *Work) (err erro
 	scanner := bufio.NewScanner(compressedReader)
 	scanner.Split(bufio.ScanLines)
 
-	set := set.NewNonTS()
+	dates := set.NewNonTS()
 	var logline *Logline
+
+	tags := set.NewNonTS()
+	bootIds := set.NewNonTS()
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		// Sometimes, we get weird lines
@@ -113,11 +117,23 @@ func UpdateStagingMetadataDates(metadata *StagingMetadata, work *Work) (err erro
 			err = errors.New(fmt.Sprintf("Failed to get datetime of line: %v: %v", line, err))
 			return err
 		}
-		set.Add(dt)
+		dates.Add(dt)
+
+		tags.Add(logline.Tag)
+		bootIds.Add(logline.BootId)
 	}
-	for _, data := range set.List() {
+
+	for _, data := range dates.List() {
 		dt := data.(time.Time)
 		metadata.Dates = append(metadata.Dates, dt)
+	}
+	for _, data := range tags.List() {
+		tag := data.(string)
+		metadata.Tags = append(metadata.Tags, tag)
+	}
+	for _, data := range bootIds.List() {
+		bootId := data.(string)
+		metadata.BootIds = append(metadata.BootIds, bootId)
 	}
 
 	work.DataStream.Rewind()
@@ -212,9 +228,9 @@ func HandleUpload(input io.Reader, work *Work, workChannel chan *Work, stagingCo
 		fmt.Fprintln(os.Stderr, errs)
 	}
 
-	// Update staging metadata dates
-	if err = UpdateStagingMetadataDates(&work.StagingMetadata, work); err != nil {
-		err = errors.New(fmt.Sprintf("Failed UpdateStagingMetadataDates: %v", err))
+	// Update staging metadata fields
+	if err = UpdateStagingMetadataFields(&work.StagingMetadata, work); err != nil {
+		err = errors.New(fmt.Sprintf("Failed UpdateStagingMetadataFields: %v", err))
 		return
 	}
 	// We still haven't written the metadata to the file. This will be
