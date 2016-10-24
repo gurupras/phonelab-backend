@@ -22,8 +22,7 @@ import (
 )
 
 type Work struct {
-	UploadMetadata
-	StagingMetadata StagingMetadata
+	StagingMetadata
 	StagingFileName string
 	StagingDir      string
 	OutDir          string
@@ -35,7 +34,7 @@ type UploadMetadata struct {
 	DeviceId        string `yaml:device_id`
 	PackageName     string `yaml:package_name`
 	UploadTimestamp int64  `yaml:upload_timestamp`
-	UploadFileName  string
+	UploadFileName  string `yaml:upload_filename`
 }
 
 func UpdateStagingMetadata(work *Work) (err error, fail bool) {

@@ -7,6 +7,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
+	"strings"
+
+	"github.com/gurupras/gocommons"
 
 	"gopkg.in/yaml.v2"
 )
@@ -34,6 +38,8 @@ func WriteMetadata(writer io.Writer, metadata interface{}) (err error) {
 		err = errors.New(fmt.Sprintf("Failed to marshal metadata into YAML: %v", err))
 		return
 	}
+	totalLen := len(metadataBytes) + 8
+	buf.WriteString(fmt.Sprintf("%08d\n", totalLen))
 	buf.WriteString("---\n")
 	buf.Write(metadataBytes)
 	buf.WriteString("---\n")
@@ -52,32 +58,51 @@ func WriteWorkAsYamlMetadataBytes(writer io.Writer, work *Work) (err error) {
 	return
 }
 
-func ParseYamlBytesFromFile(filePath string, maxHeaderSize int) (yamlBytes []byte, err error) {
-	var file *os.File
-
-	file, err = os.OpenFile(filePath, os.O_RDONLY, 0)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to open staged file to move to pending work\n", err)
-		return
-	}
-	// XXX: Hard-coded to 1K
+func ParseYamlBytesFromReader(reader io.Reader) (yamlBytes []byte, err error) {
 	buf := new(bytes.Buffer)
 
-	_, err = io.CopyN(buf, file, 1024)
+	if _, err = io.CopyN(buf, reader, 9); err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to read length of metadata bytes:", err)
+		return
+	}
+
+	var metadataBytesLen int
+	if metadataBytesLen, err = strconv.Atoi(strings.TrimSpace(buf.String())); err != nil {
+		fmt.Fprintln(os.Stderr, fmt.Sprintf("Failed to convert length of metadata bytes (%v) to int:", buf.String(), err))
+		return
+	}
+
+	buf = new(bytes.Buffer)
+	_, err = io.CopyN(buf, reader, int64(metadataBytesLen))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to read data from staged file\n", err)
 		return
 	}
 
-	var gzipReader *gzip.Reader
-	if gzipReader, err = gzip.NewReader(buf); err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to obtain reader to compressed stream", err)
+	yamlBytes = buf.Bytes()
+	return
+}
+
+func ParseYamlBytesFromFile(filePath string, maxHeaderSize int) (yamlBytes []byte, err error) {
+	var (
+		file       *gocommons.File
+		gzipReader *gzip.Reader
+	)
+
+	file, err = gocommons.Open(filePath, os.O_RDONLY, gocommons.GZ_UNKNOWN)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to open staged file to move to pending work\n", err)
 		return
 	}
-	uncompressedBuf := new(bytes.Buffer)
-	io.Copy(uncompressedBuf, gzipReader)
+	defer file.Close()
 
-	yamlBytes = uncompressedBuf.Bytes()
+	// First read the first 8 bytes. These contain the size of the metadata bytes
+	if gzipReader, err = gzip.NewReader(file.File); err != nil {
+		fmt.Fprintln(os.Stderr, fmt.Sprintf("Failed to get gzip reader to file '%v': %v", file.Path, err))
+		return
+	}
+
+	yamlBytes, err = ParseYamlBytesFromReader(gzipReader)
 	return
 }
 
