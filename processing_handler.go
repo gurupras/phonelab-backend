@@ -1,7 +1,6 @@
 package phonelab_backend
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"os"
@@ -197,22 +196,25 @@ func ProcessStagedWork(processingWork *ProcessingWork, processingConfig *Process
 	defer writer.Flush()
 
 	/**
-	 * The metadata needs to come first in the output file
-	 * However, If we were to write the metadata first, we would need to do
-	 * 2 passes over the input files. This is what we do for now..
-	 *
-	 * TODO:
-	 * The better approach would be to do the n-way merge, write the output
-	 * to a file (merged.log), parse all the necessary metadata while doing
-	 * so, write this metadata to another file (metadata.log) and then do
-	 * the equivalent of:
-	 * zcat metadata.log merged.log | gzip >out.log
+	 * Combine the metadata from multiple work instances
 	 */
-	for _, f := range sortedFiles {
-		if err = ParseOutMetadata(f, outMetadata); err != nil {
-			err = errors.New(fmt.Sprintf("Failed to parse outmetadata from file '%v': %v", f, err))
-			return
+	tags := set.NewNonTS()
+	bootIds := set.NewNonTS()
+	for _, chunkWork := range processingWork.WorkList {
+		for _, tag := range chunkWork.StagingMetadata.Tags {
+			tags.Add(tag)
 		}
+		for _, bootId := range chunkWork.StagingMetadata.BootIds {
+			bootIds.Add(bootId)
+		}
+	}
+	for _, data := range tags.List() {
+		tag := data.(string)
+		outMetadata.Tags = append(outMetadata.Tags, tag)
+	}
+	for _, data := range bootIds.List() {
+		bootId := data.(string)
+		outMetadata.BootIds = append(outMetadata.BootIds, bootId)
 	}
 
 	// Write the metadata
@@ -247,50 +249,6 @@ func ProcessStagedWork(processingWork *ProcessingWork, processingConfig *Process
 	}
 	if err = gocommons.NWayMergeGenerator(sortedFiles, sortParams, sortedChannel, nWayMergeCallback); err != nil {
 		err = errors.New(fmt.Sprintf("Failed NWayMergeGenerator(): %v", err))
-	}
-	return
-}
-
-func ParseOutMetadata(filePath string, outMetadata *OutMetadata) (err error) {
-	var (
-		ifile   *gocommons.File
-		reader  *bufio.Scanner
-		line    string
-		logline *Logline
-	)
-
-	if ifile, err = gocommons.Open(filePath, os.O_RDONLY, gocommons.GZ_TRUE); err != nil {
-		err = errors.New(fmt.Sprintf("Failed to open input file for ParseOutMetadata(): %v", err))
-		return
-	}
-	defer ifile.Close()
-
-	if reader, err = ifile.Reader(1048576); err != nil {
-		err = errors.New(fmt.Sprintf("Failed to get reader to input file in ParseOutMetadata(): %v", err))
-		return
-	}
-
-	reader.Split(bufio.ScanLines)
-
-	bootIds := set.NewNonTS()
-	tags := set.NewNonTS()
-
-	for reader.Scan() {
-		line = reader.Text()
-		if logline, err = ParseLogline(line); err != nil {
-			return
-		}
-		bootIds.Add(logline.BootId)
-		tags.Add(logline.Tag)
-	}
-
-	for _, i := range bootIds.List() {
-		b := i.(string)
-		outMetadata.BootIds = append(outMetadata.BootIds, b)
-	}
-	for _, i := range tags.List() {
-		t := i.(string)
-		outMetadata.BootIds = append(outMetadata.BootIds, t)
 	}
 	return
 }
